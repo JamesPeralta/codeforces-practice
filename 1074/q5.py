@@ -1,27 +1,16 @@
-from collections import defaultdict
-from bisect import bisect_left
+from bisect import bisect_left, bisect_right
 
 tests = int(input())
 
 def closest_left(mines, target):
-    left, right = 0, len(mines)
-    while left < right:
-        mid = left + ((right - left) // 2)
-        if mines[mid] >= target:
-            right = mid - 1
-        else:
-            left = mid
-    return float("-inf") if mines[left] > target else mines[left]
+    # Find largest element < target
+    idx = bisect_left(mines, target)
+    return mines[idx - 1] if idx > 0 else float("-inf")
 
 def closest_right(mines, target):
-    left, right = 0, len(mines)
-    while left < right:
-        mid = left + ((right - left) // 2)
-        if mines[mid] <= target:
-            left = mid + 1
-        else:
-            right = mid
-    return float("inf") if mines[left] < target else mines[left]
+    # Find smallest element > target
+    idx = bisect_right(mines, target)
+    return mines[idx] if idx < len(mines) else float("inf")
 
 for _ in range(tests):
     first = input().split()

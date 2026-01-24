@@ -1,4 +1,6 @@
 """
+use fast input as welll..
+
 3 4 5 n
 1 2 1
 
