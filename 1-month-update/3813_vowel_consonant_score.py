@@ -1,3 +1,4 @@
+# Pattern: Single pass counting — count vowels and consonants (non-digit, non-space), return floor(vowels / consonants) or 0
 import math
 class Solution:
     def vowelConsonantScore(self, s: str) -> int:

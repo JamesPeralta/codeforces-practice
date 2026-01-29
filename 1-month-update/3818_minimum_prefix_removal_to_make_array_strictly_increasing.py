@@ -1,3 +1,4 @@
+# Pattern: Scan from right — find length of longest strictly decreasing suffix; remove minimal prefix so remainder is strictly increasing (i.e. keep that suffix)
 class Solution:
     def minimumPrefixLength(self, nums: List[int]) -> int:
         decreasing = 1

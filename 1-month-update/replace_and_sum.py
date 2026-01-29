@@ -1,3 +1,4 @@
+# Pattern: Prefix max + prefix sum + range query — apply updates (max with b), compute suffix max, build prefix sum; each query is prefix_sum[r] - prefix_sum[l-1]
 import sys
 input = sys.stdin.readline
 tests = int(input())

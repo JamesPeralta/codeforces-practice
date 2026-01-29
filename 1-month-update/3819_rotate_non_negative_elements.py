@@ -1,3 +1,4 @@
+# Pattern: Gather–rotate–scatter — collect all non-negative elements and their indices, rotate the values by k (mod length), write back at original indices
 class Solution:
     def rotateElements(self, nums: List[int], k: int) -> List[int]:
         non_negative = []

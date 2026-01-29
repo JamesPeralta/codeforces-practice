@@ -1,3 +1,4 @@
+# Pattern: Brute force all subarrays + set — for each subarray [i..j] maintain sum and set of elements, count when sum is in the set (centered condition)
 class Solution:
     def centeredSubarrays(self, nums: List[int]) -> int:
         result = 0

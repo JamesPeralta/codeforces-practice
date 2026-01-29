@@ -1,3 +1,4 @@
+# Pattern: Filter by constraint + greedy selection — keep towers within Manhattan radius, per quality keep lexicographically smallest (x,y), then return highest quality
 import math
 class Solution:
     def manhat(self, x, y):

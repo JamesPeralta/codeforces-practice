@@ -1,3 +1,4 @@
+# Pattern: Longest consecutive subsequence — sort unique values, scan for longest run where a[i] == a[i-1] + 1; answer is length of longest run
 tests = int(input())
 
 for _ in range(tests):

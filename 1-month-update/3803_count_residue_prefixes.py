@@ -1,3 +1,4 @@
+# Pattern: Single pass with set — at each index track unique chars so far, count when len(chars) == (i+1) % 3
 class Solution:
     def residuePrefixes(self, s: str) -> int:
         chars = set()

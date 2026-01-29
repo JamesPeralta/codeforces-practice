@@ -1,3 +1,4 @@
+# Pattern: Hashing / normalization — normalize each word to a canonical form (e.g. shift so first char is 'a'), then count pairs with same normalized form (Caesar-equivalent)
 from collections import defaultdict
 
 class Solution:

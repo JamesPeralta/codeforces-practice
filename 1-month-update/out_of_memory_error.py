@@ -1,3 +1,4 @@
+# Pattern: Simulation with lazy reset — track resets and last_reset per index; on update only reset an index if it was reset in a previous global reset; when value > h, do global reset and set that index to init
 import sys
 input = sys.stdin.readline
 tests = int(input())

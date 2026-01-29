@@ -1,3 +1,4 @@
+# Pattern: BFS from multiple sources + Pythagorean check — run BFS from x, y, z to get distances to every node; count nodes where squared distances form a Pythagorean triple (a² + b² = c²)
 from collections import deque, defaultdict
 class Solution:
     def bfs(self, adj_list, start):

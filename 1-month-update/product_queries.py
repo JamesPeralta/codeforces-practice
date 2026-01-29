@@ -1,3 +1,4 @@
+# Pattern: DP over indices — memo[i] = min elements needed to get value i; for each i, relax memo[j] for all multiples j of i (memo[j] = min(memo[j], memo[i] + memo[j//i]))
 import sys
 import math
 input = sys.stdin.readline

@@ -1,3 +1,4 @@
+# Pattern: Greedy — remove trailing '1's from the right so the string ends with '2' (largest even digit in binary string)
 class Solution:
     def largestEven(self, s: str) -> str:
         s_arr = [elem for elem in s]

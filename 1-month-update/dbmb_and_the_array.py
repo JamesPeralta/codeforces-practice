@@ -1,3 +1,4 @@
+# Pattern: Modular arithmetic — compute diff = s - sum(array); YES if diff == 0 or (diff > 0 and diff % x == 0), else NO
 import sys
 input = sys.stdin.readline
 tests = int(input())

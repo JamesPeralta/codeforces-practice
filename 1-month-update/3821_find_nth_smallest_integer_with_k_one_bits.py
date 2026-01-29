@@ -1,3 +1,4 @@
+# Pattern: Combinatorics / digit DP — build nth smallest number with k one-bits by placing bits from high to low using binomial coefficients (C(bit_position, remaining_bits)) to skip ranges
 import math
 class Solution:
     def nthSmallest(self, n: int, k: int) -> int:

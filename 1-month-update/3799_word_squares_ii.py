@@ -1,3 +1,4 @@
+# Pattern: Brute force enumeration + rotation check — try all 4-combinations of words, for each try 4 rotations and validate square constraints (top-left=left-top, etc.)
 class Solution:
     def check_square(self, top, right, bot, left):
         # print(top, right, bot, left)

@@ -1,3 +1,4 @@
+# Pattern: Greedy — find longest sorted prefix of permutation (1,2,...,largest); then find index of max in remainder, reverse segment from end of prefix to that max to bring max into place
 import sys
 input = sys.stdin.readline
 tests = int(input())

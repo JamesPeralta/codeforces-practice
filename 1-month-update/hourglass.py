@@ -1,3 +1,4 @@
+# Pattern: Formula / parity — num_flips = m // k; if odd flips, position = min(k,s) - (m % k), else position = s - (m % k); answer = max(0, position)
 test_cases = int(input())
 
 for i in range(test_cases):

@@ -1,3 +1,4 @@
+# Pattern: Direct formula — answer is n * max(array) (each element can be increased to max, total sum = n * max)
 tests = int(input())
 
 for _ in range(tests):

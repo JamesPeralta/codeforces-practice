@@ -1,3 +1,4 @@
+# Pattern: Sliding window (two pointers) + hash map — expand right, shrink left when sum >= k, track distinct sum via frequency map
 from collections import defaultdict
 class Solution:
     def minLength(self, nums: List[int], k: int) -> int:

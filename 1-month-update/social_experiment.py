@@ -1,3 +1,4 @@
+# Pattern: Parity / modulo — if n <= 3 answer is n; else answer is n % 2 (remainder when splitting people into groups of 3)
 test_cases = int(input())
 
 for i in range(test_cases):

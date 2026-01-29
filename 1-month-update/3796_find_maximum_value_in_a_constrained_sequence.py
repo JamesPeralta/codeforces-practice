@@ -1,3 +1,4 @@
+# Pattern: Backward propagation of constraints + greedy forward — propagate restrictions left-to-right, then simulate sequence maximizing value at each step
 class Solution:
     def findMaxVal(self, n: int, restrictions: List[List[int]], diff: List[int]) -> int:
         all_rest = [float("inf") for i in range(n)]

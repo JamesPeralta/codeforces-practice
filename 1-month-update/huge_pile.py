@@ -1,3 +1,4 @@
+# Pattern: Memoization / DP — recursively split n into floor(n/2) and ceil(n/2); min steps to reach k is 1 + min(steps from first, steps from second); cache by n
 test_cases = int(input())
 import math
 

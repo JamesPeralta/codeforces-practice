@@ -1,3 +1,4 @@
+# Pattern: Ad-hoc / direct output — output roots as "1 2 3 ... n" for given n (problem-specific)
 import math
 tests = int(input())
 

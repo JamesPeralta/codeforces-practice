@@ -1,3 +1,4 @@
+# Pattern: Two pointers (maximal segments) + hash map — find all maximal contiguous segments of same value in nums, group by value and segment size; answer is number of distinct (value, size) groups that need changing
 from collections import defaultdict
 class Solution:
     def minOperations(self, nums: List[int], target: List[int]) -> int:

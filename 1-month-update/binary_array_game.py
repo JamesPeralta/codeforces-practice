@@ -1,3 +1,4 @@
+# Pattern: Case analysis — winner determined by first and last character of the turn string (both 0 → BOB, else ALICE)
 """
 intuition.
 

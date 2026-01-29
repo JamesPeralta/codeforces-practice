@@ -1,3 +1,4 @@
+# Pattern: Greedy + binary search + prefix sum — for each sword strength x, count levels passable (prefix_sum ≤ available swords) via bisect; maximize x * levels_passed
 import sys
 import bisect
 input = sys.stdin.readline

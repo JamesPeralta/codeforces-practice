@@ -1,3 +1,4 @@
+# Pattern: Binary search (closest spike) + simulation (compress moves to positions) + prefix sum — for each robot find left/right spike distances, compute step count to hit each; count deaths per step and output cumulative survivors
 from bisect import bisect_left, bisect_right
 
 tests = int(input())
