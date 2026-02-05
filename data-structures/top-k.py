@@ -37,27 +37,9 @@ __lt__
 
  elif lastActive diff
 
- else:
-    return self.user_id > a.user_id   # larger id = lower rank = "smaller" for min-heap
+Solution without custom class: use key (-rating, -lastActive, user_id).
 """
 import heapq
-
-class User:
-    def __init__(self, user_id, rating, last_active):
-        self.user_id = user_id
-        self.rating = rating
-        self.last_active = last_active
-    
-    def __lt__(self, elem):
-        if self.rating != elem.rating:
-            return self.rating < elem.rating
-        elif self.last_active != elem.last_active:
-            return self.last_active < elem.last_active
-        else:
-            return self.user_id > elem.user_id
-
-    def __repr__(self):
-        return f"{self.user_id}"
 
 users = [
     (1, 10, 1),
@@ -68,18 +50,22 @@ users = [
 ]
 
 def k_best_fn(k):
-    print("Hello World")
+    # Key so *worse* user = smaller = evicted when len > k: (rating, ts, -user_id)
+    # (lower rating, older ts, larger id → smaller key)
     k_best = []
     for user_id, rating, ts in users:
-        heapq.heappush(k_best, User(user_id, rating, ts))
+        key = (rating, ts, -user_id)
+        heapq.heappush(k_best, (key, user_id))
         if len(k_best) > k:
             heapq.heappop(k_best)
-    
-    result = []
-    while len(k_best):
-        result.append(heapq.heappop(k_best))
-    
-    result.reverse()
-    print(result)
 
-k_best_fn(4)
+    # Drain: we get worst-first, reverse for best-first.
+    result = []
+    while k_best:
+        _, user_id = heapq.heappop(k_best)
+        result.append(user_id)
+    result.reverse()
+    return result
+
+if __name__ == "__main__":
+    print(k_best_fn(4))  # [5, 4, 3, 1] — top 4 by rank
