@@ -1,0 +1,2341 @@
+ANTHROPIC INTERVIEW QUESTIONS - COMPLETE COLLECTION
+ 
+TABLE OF CONTENTS
+-----------------
+CODING QUESTIONS
+  1. Web Crawler
+  2. Deduplicate Files
+  3. Converting Stack Samples to Trace Events
+  4. Distributed Mode and Median
+  5. LRU Cache (Python)
+  6. Tokenize (Python)
+  7. Batch Image Processor
+ 
+SYSTEM DESIGN QUESTIONS
+  8. Inference API
+  9. Prompt Engineering Playground
+  10. Batch Processing Service
+  11. Distributed Model Deployment
+  12. 1-to-1 Chat System
+ 
+BEHAVIORAL QUESTIONS
+  13. Culture & Behavioral Interview Questions
+  14. Hiring Manager Interview Questions
+ 
+ONLINE ASSESSMENT (OA) QUESTIONS
+  15. In-memory Database
+  16. Cloud Storage System
+  17. Banking System
+  18. Recipe Manager
+  19. Task Management System
+ 
+================================================================================
+CODING #1 - WEB CRAWLER
+High Frequency | Software Engineer
+================================================================================
+ 
+BASIC PROBLEM
+-------------
+You are given:
+- A starting URL startUrl
+- An interface HtmlParser that can fetch all URLs from a given web page
+ 
+Implement a web crawler that returns all URLs reachable from startUrl that share
+the same hostname as startUrl. The order of URLs in the result does not matter.
+ 
+Interface:
+  interface HtmlParser {
+      public List<String> getUrls(String url);
+  }
+ 
+Your function: List<String> crawl(String startUrl, HtmlParser htmlParser)
+ 
+REQUIREMENTS
+- Start from startUrl
+- Use HtmlParser.getUrls(url) to obtain all links from a page
+- Avoid duplicates — never crawl the same URL twice
+- Restrict scope — only follow URLs whose hostname matches that of startUrl
+- Assume all URLs use the http protocol and do not include a port
+ 
+NOTES FOR CANDIDATE
+- URL Fragments: Consider how to handle URL fragments (e.g., http://example.com/page#section1).
+  Should these be treated as the same URL or different?
+- URL Normalization: Assume URL normalization is NOT required for the basic problem.
+ 
+FOLLOW-UP: MULTITHREADED/CONCURRENT IMPLEMENTATION (Important!!)
+-----------------------------------------------------------------
+After implementing the basic single-threaded version, implement a multithreaded
+or concurrent version to improve performance.
+ 
+Requirements:
+- Parallelize the crawling — multiple URLs should be fetched concurrently
+- Thread safety — ensure no race conditions when accessing shared data structures
+- Avoid duplicates — even with multiple threads, each URL should only be crawled once
+- Maintain hostname restriction
+ 
+NOTE: Use a thread pool to control the total number of threads.
+- Do NOT create unbounded threads (e.g., one thread per URL)
+- Common approach: Use a fixed-size thread pool (e.g., 10-20 threads) with a task queue
+ 
+SOLUTION: JavaScript Multithreaded Implementation
+-------------------------------------------------
+ 
+class ThreadPool {
+    constructor(maxConcurrency) {
+        this.maxConcurrency = maxConcurrency;
+        this.queue = [];
+        this.runningTasks = 0;
+        this.waitForFinishPromise = null;
+        this.waitForFinishResolve = null;
+    }
+ 
+    execute(task) {
+        return new Promise((resolve, reject) => {
+            this.queue.push({ task, resolve, reject });
+            this._processQueue();
+        });
+    }
+ 
+    _processQueue() {
+        if (this.runningTasks >= this.maxConcurrency) return;
+        if (this.queue.length === 0) {
+            if (this.runningTasks === 0) {
+                this.waitForFinishResolve && this.waitForFinishResolve();
+                this.waitForFinishPromise = null;
+                this.waitForFinishResolve = null;
+            }
+            return;
+        }
+        const { task, resolve, reject } = this.queue.shift();
+        this.runningTasks++;
+        Promise.resolve()
+            .then(task)
+            .then(resolve, reject)
+            .finally(() => {
+                this.runningTasks--;
+                this._processQueue();
+            });
+    }
+ 
+    waitForFinish() {
+        if (this.runningTasks === 0 && this.queue.length === 0) {
+            return Promise.resolve();
+        }
+        if (!this.waitForFinishPromise) {
+            this.waitForFinishPromise = new Promise((resolve) => {
+                this.waitForFinishResolve = resolve;
+            });
+        }
+        return this.waitForFinishPromise;
+    }
+}
+ 
+function getProcessedUrlObject(url) {
+    const newUrl = new URL(url);
+    newUrl.hash = "";  // Remove hash fragments
+    return newUrl;
+}
+ 
+async function crawl(startUrl, htmlParser, maxConcurrency = 10) {
+    const processedStartUrlObject = getProcessedUrlObject(startUrl);
+    const startHostName = processedStartUrlObject.hostname;
+ 
+    const result = [processedStartUrlObject.toString()];
+    const visited = new Set([processedStartUrlObject.toString()]);
+    const pool = new ThreadPool(maxConcurrency);
+ 
+    const crawlUrl = async (url) => {
+        try {
+            const nextUrls = await htmlParser.getUrls(url);
+            for (const nextUrl of nextUrls) {
+                const nextUrlProcessedObject = getProcessedUrlObject(nextUrl);
+                const nextUrlProcessedString = nextUrlProcessedObject.toString();
+                if (nextUrlProcessedObject.hostname === startHostName
+                    && !visited.has(nextUrlProcessedString)) {
+                    visited.add(nextUrlProcessedString);
+                    result.push(nextUrlProcessedString);
+                    pool.execute(() => crawlUrl(nextUrl)).catch((err) => {
+                        console.error(`Error crawling ${nextUrl}:`, err);
+                    });
+                }
+            }
+        } catch (error) {
+            console.error(`Error fetching URLs from ${url}:`, error);
+        }
+    };
+ 
+    await pool.execute(() => crawlUrl(startUrl));
+    await pool.waitForFinish();
+    return result;
+}
+ 
+ADDITIONAL DISCUSSION TOPICS (verbal)
+--------------------------------------
+1. Concurrency Models: Threads vs Processes
+   - Threads: Lightweight, share memory, suitable for I/O-bound tasks
+   - Processes: Heavyweight, isolated memory, better for CPU-bound tasks
+   - For web crawling: Threads are typically preferred (I/O-bound, shared state)
+ 
+2. Distributed Crawling System (millions of seed URLs)
+   - URL Distribution: Consistent hashing based on hostname/domain
+   - Coordination: Shared distributed cache (Redis), central URL frontier
+   - Load Balancing, Fault Tolerance
+ 
+3. Politeness Policy and Rate Limiting
+   - robots.txt compliance
+   - Rate limiting per domain
+   - Adaptive throttling
+ 
+4. Duplicate Content Detection
+   - Content Fingerprinting: Hash page content (MD5, SHA-256)
+   - Simhash for near-duplicate detection
+   - URL Normalization: Canonicalize URLs
+ 
+================================================================================
+CODING #2 - DEDUPLICATE FILES
+High Frequency | Software Engineer, Machine Learning Engineer
+================================================================================
+ 
+BASIC PROBLEM
+-------------
+Given a root folder/directory, find all duplicate files within it. Return groups
+of file paths where each group contains files with identical content.
+ 
+Example directory structure:
+  root/
+  ├── a/
+  │   ├── f1.mp4
+  │   └── f2.mp4
+  └── b/
+      ├── f3.mp4
+      └── tmp/
+          └── f4.mp4
+ 
+Expected output:
+  [
+      ["a/f1.mp4", "a/f2.mp4"],        # Group 1: identical content
+      ["b/f3.mp4", "b/tmp/f4.mp4"]     # Group 2: identical content
+  ]
+ 
+REQUIREMENTS
+- Traverse all files in the directory tree starting from the root folder
+- Group files by content
+- Return only duplicates (files that appear alone not included)
+- Handle nested directories recursively
+ 
+INTERFACE
+  def find_duplicate_files(root_path: str) -> List[List[str]]:
+ 
+NOTES FOR CANDIDATE
+- Create test files in the interview environment (e.g., Google Colab)
+- Consider edge cases: empty files, symbolic links, file permissions
+- Time complexity depends on total size of all files
+ 
+OPTIMIZED APPROACH: Three-Stage Filtering
+-----------------------------------------
+Stage 1 - File Size (Metadata):
+  - Group files by size first
+  - Files with different sizes cannot be duplicates
+  - Very fast (just metadata lookup, no I/O)
+ 
+Stage 2 - Partial Hash (First Chunk):
+  - For files with the same size, read and hash only the first chunk (e.g., 1024 bytes)
+  - Files with different partial hashes cannot be duplicates
+ 
+Stage 3 - Full Hash:
+  - Only when size and partial hash match, compute the full content hash
+ 
+Implementation structure:
+  def find_duplicate_files_optimized(root_path: str) -> List[List[str]]:
+      size_groups = group_by_file_size(root_path)
+      partial_hash_groups = {}
+      for files in size_groups.values():
+          if len(files) > 1:
+              group_by_partial_hash(files, partial_hash_groups)
+      full_hash_groups = {}
+      for files in partial_hash_groups.values():
+          if len(files) > 1:
+              group_by_full_hash(files, full_hash_groups)
+      return [files for files in full_hash_groups.values() if len(files) > 1]
+ 
+ADDITIONAL DISCUSSION TOPICS (verbal)
+--------------------------------------
+1. I/O Bound vs CPU Bound
+   - Usually I/O bound (reading files from disk is slower than computing hashes)
+   - With modern SSDs, may become more CPU bound
+   - If I/O bound: Use async I/O, read files in parallel
+   - If CPU bound: Use faster hash algorithms (xxHash), parallelize hash computation
+ 
+2. Hash Function Selection
+   - MD5: Fast but cryptographically broken; acceptable collision rate for dedup
+   - SHA-256: Slower but very low collision probability
+   - xxHash/CityHash: Extremely fast non-cryptographic hashes
+   - For most cases: SHA-256 provides excellent collision resistance
+ 
+3. Distributed System Implementation
+   - MapReduce Approach: Map (compute hashes), Shuffle (group same hashes), Reduce (output duplicates)
+   - Partitioning Strategy: Partition by file size first
+ 
+4. Continuous Monitoring System
+   - File System Watcher: Use OS-level file system events (inotify, FSEvents)
+   - Database Schema: hash_to_files, file_to_hash tables
+   - Notification System: Queue-based (RabbitMQ, Kafka)
+ 
+5. Chunk Size Selection
+   - Factors: I/O throughput, early differentiation, memory usage, disk sector size
+   - Typical values: 1KB-4KB for quick check, 64KB-1MB for SSDs
+ 
+================================================================================
+CODING #3 - CONVERTING STACK SAMPLES TO TRACE EVENTS
+High Frequency | Software Engineer, Machine Learning Engineer
+================================================================================
+ 
+BASIC PROBLEM
+-------------
+A sampling profiler periodically records the full call stack at a timestamp.
+Given a list of samples sorted by timestamp, convert them into trace events.
+ 
+Struct definitions:
+  struct Sample {
+      double ts;
+      std::vector<std::string> stack;  // outermost → innermost
+  };
+ 
+  struct Event {
+      std::string kind;   // "start" or "end"
+      double ts;
+      std::string name;
+  };
+ 
+Example:
+  Input: t=1.0: ["main"], t=2.5: ["main", "func1"], t=3.1: ["main"]
+  Output:
+    start 1.0 main
+    start 2.5 func1
+    end   3.1 func1
+ 
+REQUIREMENTS
+- Between consecutive samples, determine what changed
+- End functions that disappeared (deepest-first order)
+- Start functions that newly appeared (outer-to-inner order)
+- Do NOT automatically close remaining functions after the last sample
+- Handle recursion correctly — same function name at different depths = separate frames
+ 
+INTERFACE
+  List<Event> convertSamplesToEvents(List<Sample> samples)
+ 
+NOTE: Find the longest common prefix to determine which functions ended/started
+ 
+BASIC SOLUTION
+--------------
+  def convert_samples_to_events(samples):
+      events = []
+      prev_stack = []
+ 
+      for sample in samples:
+          ts, stack = sample.ts, sample.stack
+          common_len = 0
+          for i in range(min(len(prev_stack), len(stack))):
+              if prev_stack[i] == stack[i]:
+                  common_len += 1
+              else:
+                  break
+ 
+          # End functions that disappeared (deepest first)
+          for i in range(len(prev_stack) - 1, common_len - 1, -1):
+              events.append(Event("end", ts, prev_stack[i]))
+ 
+          # Start functions that newly appeared (outer to inner)
+          for i in range(common_len, len(stack)):
+              events.append(Event("start", ts, stack[i]))
+ 
+          prev_stack = stack
+      return events
+ 
+Walkthrough:
+  Step | Previous Stack      | Current Stack       | Common | Ends          | Starts
+  1    | []                  | ["main"]            | 0      | —             | start 1.0 main
+  2    | ["main"]            | ["main","func1"]    | 1      | —             | start 2.5 func1
+  3    | ["main","func1"]    | ["main"]            | 1      | end 3.1 func1 | —
+ 
+Recursion: Handled correctly because we compare by position, not name.
+ 
+Complexity: Time O(S×D), Space O(D) where S=samples, D=max stack depth
+ 
+FOLLOW-UP 1: DEBOUNCING BY N CONSECUTIVE SAMPLES
+-------------------------------------------------
+Only emit start/end events for functions that appear in N consecutive samples.
+ 
+Definition of "Consecutive":
+  - Same frame (same depth and ancestors) appears in N samples in a row
+  - If a function ends and later restarts, its streak RESETS
+ 
+Example (N=2):
+  t=1.0: ["main"]
+  t=2.0: ["main"]
+  t=3.0: ["main", "foo"]
+  t=4.0: ["main", "foo"]
+  Output:
+    start 2.0 main   # confirmed after 2 samples
+    start 4.0 foo    # confirmed after 2 samples
+ 
+Critical Edge Case:
+  Sample(1, ['a', 'b']) then Sample(2, ['c', 'b', 'a'])
+  → a and b do NOT count as consecutive (common prefix = 0, since 'a' != 'c')
+ 
+INTERFACE
+  List<Event> convertSamplesToDebouncedEvents(List<Sample> samples, int N)
+ 
+SOLUTION
+--------
+  def convert_samples_to_debounced_events(samples, N):
+      events = []
+      prev_stack = []
+      streak_counts = []
+      confirmed = []
+ 
+      for sample in samples:
+          ts, stack = sample.ts, sample.stack
+          common_len = 0
+          for i in range(min(len(prev_stack), len(stack))):
+              if prev_stack[i] == stack[i]:
+                  common_len += 1
+              else:
+                  break
+ 
+          # End confirmed functions that disappeared (deepest first)
+          for i in range(len(prev_stack) - 1, common_len - 1, -1):
+              if confirmed[i]:
+                  events.append(Event("end", ts, prev_stack[i]))
+ 
+          new_streaks = []
+          new_confirmed = []
+ 
+          # Common prefix: increment streaks
+          for i in range(common_len):
+              new_streak = streak_counts[i] + 1
+              new_streaks.append(new_streak)
+              if new_streak >= N and not confirmed[i]:
+                  events.append(Event("start", ts, stack[i]))
+                  new_confirmed.append(True)
+              else:
+                  new_confirmed.append(confirmed[i])
+ 
+          # New functions: start with streak of 1
+          for i in range(common_len, len(stack)):
+              new_streaks.append(1)
+              if N <= 1:
+                  events.append(Event("start", ts, stack[i]))
+                  new_confirmed.append(True)
+              else:
+                  new_confirmed.append(False)
+ 
+          prev_stack = stack
+          streak_counts = new_streaks
+          confirmed = new_confirmed
+      return events
+ 
+ADDITIONAL DISCUSSION TOPIC (verbal)
+--------------------------------------
+Prefix vs Postfix (Suffix) Comparison:
+  - Prefix (current approach): Compare from root downward. Coarse-grained.
+  - Postfix (leaf-first): More precise for profiling since leaf functions change most.
+  - Example: Stack A: main→handler→parse→foo vs Stack B: main→handler→parse→bar
+    Prefix: 3-layer match, may consider same
+    Postfix: Leaf differs clearly
+ 
+================================================================================
+CODING #4 - DISTRIBUTED MODE AND MEDIAN
+Research Engineer, Software Engineer
+================================================================================
+ 
+BASIC PROBLEM
+-------------
+Given:
+- A very large dataset distributed across multiple machines (typically 10 workers)
+- Pre-built interface functions: send(worker_id, data) and recv()
+- Each machine has a portion of the dataset stored locally
+ 
+Find the MODE (most frequent value) of the entire dataset.
+ 
+Critical Constraint: Avoid having all machines simultaneously send data to a
+single machine (creates severe reception delays).
+ 
+Interface:
+  def send(worker_id, data): pass
+  def recv(): pass
+ 
+Dataset: Contains mostly unique integers, one integer appears twice on different
+machines.
+ 
+DETAILED IMPLEMENTATION: MODE
+------------------------------
+Phase 1: Local Processing
+  from collections import Counter
+  def phase1_local_count(local_data):
+      return Counter(local_data)
+ 
+Phase 2: Distributed Shuffle (Key Innovation)
+  - Each worker redistributes local counts using: target_worker = key % num_workers
+  - Ensures all identical keys end up on the same worker
+  - All workers send and receive simultaneously (no bottleneck)
+ 
+  def phase2_shuffle_counts(local_counter, worker_id, num_workers):
+      buckets = [[] for _ in range(num_workers)]
+      for key, count in local_counter.items():
+          target_worker = key % num_workers
+          buckets[target_worker].append((key, count))
+      for target_id in range(num_workers):
+          if target_id != worker_id:
+              send(target_id, buckets[target_id])
+      received_data = []
+      for _ in range(num_workers - 1):
+          data = recv()
+          received_data.extend(data)
+      received_data.extend(buckets[worker_id])
+      return received_data
+ 
+Phase 3: Local Aggregation
+  - Each worker aggregates all counts for its assigned keys
+  - Gets local top-1 (sufficient because keys are disjoint)
+ 
+Phase 4: Global Reduction
+  - All workers send their local top-1 to worker 0
+  - Worker 0 computes global mode
+ 
+NOTE on top-1 sufficiency: After Phase 2, each worker owns a DISJOINT set of keys.
+The global mode must be the maximum among all workers' local maximums.
+ 
+FOLLOW-UP: FINDING THE MEDIAN
+------------------------------
+Key Insight: Use distributed quickselect algorithm.
+ 
+Phase 1&2: Build distributed histogram (reuse mode phases)
+ 
+Phase 3: Distributed Quickselect (binary search)
+  - Worker 0 coordinates: picks pivot = (low + high) // 2
+  - Each worker counts values: < pivot, == pivot, > pivot
+  - Aggregate on worker 0, decide next search range
+  - Repeat until low == high == median
+ 
+  def distributed_quickselect(local_histogram, worker_id, num_workers, target_position):
+      # Find global min/max
+      # Binary search:
+      while low < high:
+          if worker_id == 0:
+              pivot = (low + high) // 2
+              for i in range(1, num_workers): send(i, pivot)
+          else:
+              pivot = recv()
+ 
+          count_less = sum(count for val, count in local_histogram.items() if val < pivot)
+          count_equal = local_histogram.get(pivot, 0)
+          count_greater = sum(count for val, count in local_histogram.items() if val > pivot)
+ 
+          # Worker 0 aggregates and broadcasts new range
+          # ...
+      return low
+ 
+ADDITIONAL DISCUSSION TOPICS (verbal)
+--------------------------------------
+1. Handling Data Skew
+   - Use MurmurHash/CityHash instead of key % num_workers for better distribution
+   - Dynamic load balancing
+ 
+2. Fault Tolerance
+   - Checkpointing after each phase
+   - Heartbeats, replication, retry mechanism
+ 
+3. Optimizing for Different Data Sizes
+   - Small: Gather all to one machine
+   - Very large: Multi-level aggregation, approximate algorithms (Count-Min Sketch)
+   - Streaming: Two-heap approach for median
+ 
+4. Communication Optimization
+   - Async communication, batching, tree-based reduction
+   - Deadlock prevention: Interleave send/recv operations
+ 
+5. Extending to Other Statistics
+   - Top K: Send top K from each worker after shuffle
+   - Percentiles: Similar to median, distributed quantile sketch (T-Digest)
+   - Variance: Parallel variance formula, Welford's method
+   - Distinct count: HyperLogLog
+ 
+================================================================================
+CODING #5 - LRU CACHE (Python)
+Software Engineer
+================================================================================
+ 
+BASIC PROBLEM
+-------------
+You are given an existing in-memory LRU (Least Recently Used) cache implementation
+in Python. The implementation has a bug in the cache key generation logic.
+ 
+The bug is related to how the cache handles Python's variable-length arguments
+(*args) and **kwargs when generating cache keys.
+ 
+Your task:
+1. Understand the existing cache implementation
+2. Identify the bug in the cache key generation step
+3. Fix the cache key generation to properly handle *args and **kwargs
+ 
+REQUIREMENTS
+- Identify the bug — understand why current key generation fails with *args/**kwargs
+- Generate hashable keys — convert arguments into format usable as dict keys
+- Handle argument variations — properly process both *args and **kwargs
+- Maintain cache correctness — consistent key generation for same inputs
+ 
+NOTES FOR CANDIDATE
+- Python-specific: Understanding of *args/**kwargs, hashable vs non-hashable types
+- Key Generation Hints:
+  - Handle keyword argument order (func(a=1, b=2) vs func(b=2, a=1))
+  - Convert unhashable types (lists, dicts) to hashable (tuples, frozensets)
+  - Look into Python's functools module for inspiration
+ 
+FOLLOW-UP: PERSISTENT/DURABLE CACHE
+------------------------------------
+Extend to support persistent storage that survives restarts.
+ 
+Discussion Points:
+- Storage Format: JSON, pickle, custom format? Single file vs multiple files?
+- Write Strategy:
+  - Write-through: Immediate disk write (slow but safe)
+  - Write-back: Batch periodic writes (fast, risk of data loss)
+  - Append-only log
+- Recovery Strategy: Reconstruct LRU order from disk
+ 
+ADDITIONAL DISCUSSION TOPICS (verbal)
+--------------------------------------
+1. Cache Eviction Policies
+   - LRU (Least Recently Used): Evict least recently accessed item
+   - LFU (Least Frequently Used): Evict least frequently accessed item
+   - FIFO: Evict oldest item by insertion time
+   - Random: Randomly evict
+   - TTL (Time To Live): Evict based on expiration time
+ 
+2. Distributed Cache
+   - Shared distributed cache (Redis, Memcached)
+   - Data Partitioning: Consistent hashing
+   - Replication for fault tolerance
+ 
+3. Thread Safety
+   - Global lock (simple but limits concurrency)
+   - Fine-grained locking (better concurrency)
+   - Read-write locks (optimize for read-heavy workloads)
+ 
+4. Memory Management
+   - Maximum number of entries / total memory
+   - Memory Pressure Handling: Proactive eviction before OOM
+ 
+================================================================================
+CODING #6 - TOKENIZE (Python)
+Software Engineer
+================================================================================
+ 
+PART 1: CODE READING AND UNDERSTANDING
+---------------------------------------
+Given two functions: tokenize and detokenize.
+ 
+  def tokenize(text: str, vocab: dict):
+      tokens = []
+      key = ""
+      for i in range(len(text)):
+          key += text[i]
+          if key in vocab:
+              tokens.append(vocab[key])
+              key = ""
+      return tokens
+ 
+  def detokenize(tokens, vocab: dict):
+      text = ""
+      reversed_vocab = {value: key for key, value in vocab.items()}
+      for token in tokens:
+          text += reversed_vocab[token]
+      return text
+ 
+Example:
+  vocab = {"a": 1, "b": 2, "cd": 3}
+  tokens = tokenize("acdebe", vocab)
+ 
+Tasks:
+- Explain what the code does
+- Identify problems with this implementation
+- Discuss when/why this approach fails
+ 
+Key Points:
+- Greedy first-match strategy
+- What happens with characters not in vocab?
+- What happens to 'key' if no match is ever found?
+ 
+PART 2: CODE REVIEW
+-------------------
+Modified version with fix attempt:
+ 
+  def tokenize(text: str, vocab: dict):
+      tokens = []
+      key = ""
+      for i in range(len(text)):
+          key += text[i]
+          if key in vocab:
+              tokens.append(vocab[key])
+              key = ""
+      # NEW: Handle remaining unmatched characters
+      if key:
+          tokens.append(vocab.get("UNK", -1))
+      return tokens
+ 
+  vocab = {"a": 1, "b": 2, "cd": 3, "UNK": -1}
+ 
+Review this change — does it actually solve the problem?
+Consider: What if text is "xabc" where "x" is not in vocab? Does the fix handle
+mid-string unknowns?
+ 
+PART 3: IMPLEMENTATION
+-----------------------
+Implement your own version that properly handles unknown characters.
+ 
+Example solution approach:
+  def tokenize(text: str, vocab: dict):
+      tokens = []
+      key = ""
+      for i in range(len(text)):
+          key += text[i]
+          if key in vocab:
+              tokens.append(vocab[key])
+              key = ""
+          else:
+              # Check if any vocab key starts with the current key
+              if not any(k.startswith(key) for k in vocab.keys()):
+                  tokens.append(vocab.get("UNK", -1))
+                  key = ""
+      if key:
+          tokens.append(vocab.get("UNK", -1))
+      return tokens
+ 
+ADDITIONAL DISCUSSION TOPICS (verbal)
+--------------------------------------
+1. Tokenization Strategies
+   - Character-level, Word-level, Subword (BPE, WordPiece, SentencePiece)
+   - Byte-level: No UNK needed, but longer sequences
+ 
+2. Algorithm Complexity
+   - Current: O(n × m × k) where n=text length, m=avg key length, k=vocab size
+   - Optimization: Use a Trie (prefix tree) for O(n × m) complexity
+ 
+3. Ambiguity and Optimal Tokenization
+   - Example: vocab={"ab":1,"abc":2,"c":3}, text="abc"
+   - Greedy: ["ab","c"] (2 tokens)
+   - Optimal: ["abc"] (1 token)
+   - Dynamic Programming for optimal segmentation
+ 
+4. Handling UNK in Practice
+   - Subword tokenization reduces UNK frequency
+   - BPE can represent any text without UNK tokens
+ 
+================================================================================
+CODING #7 - BATCH IMAGE PROCESSOR
+Software Engineer
+================================================================================
+ 
+OVERVIEW
+--------
+Build a batch image processing system. Given a set of images and transformation
+specifications in JSON format, apply transformations to each image and save results.
+ 
+NOTE: Documentation search is allowed and expected. Use any resources except AI.
+ 
+PROBLEM SETUP
+-------------
+Directory structure:
+  project/
+  ├── small_images/      # Small test images for development
+  ├── large_images/      # Large images for performance testing
+  ├── transformations/   # JSON files defining transformations
+  └── output/            # Directory to save processed images
+ 
+TRANSFORMATION SPECIFICATIONS
+------------------------------
+Transformations Without Parameters:
+  - grayscale: Convert image to grayscale
+  - flip_horizontal: Flip image horizontally
+  - flip_vertical: Flip image vertically
+ 
+Transformations With Parameters:
+  - scale: factor (float) — Scale by given factor
+  - blur: radius (int) — Apply Gaussian blur
+  - rotate: angle (float) — Rotate by degrees
+ 
+Example JSON:
+  {
+    "transformations": [
+      { "type": "grayscale" },
+      { "type": "scale", "factor": 0.5 },
+      { "type": "rotate", "angle": 90 }
+    ]
+  }
+ 
+INTERFACE
+  def process_images(image_dir, transformation_dir, output_dir, get_output_path) -> None
+ 
+PART 1: BASIC IMPLEMENTATION
+-----------------------------
+Choose an image processing library (Pillow recommended).
+ 
+Pillow API Reference:
+  - Grayscale: PIL.ImageOps.grayscale()
+  - Flip horizontal: PIL.ImageOps.mirror()
+  - Flip vertical: PIL.ImageOps.flip()
+  - Scale/Resize: Image.resize(size, resample)
+  - Blur: PIL.ImageFilter.GaussianBlur(radius)
+  - Rotate: Image.rotate(angle, expand=True)
+ 
+Basic Implementation:
+  from PIL import Image, ImageFilter, ImageOps
+  import json, os
+  from pathlib import Path
+ 
+  def apply_transformation(image, transform):
+      t = transform['type']
+      if t == 'grayscale':
+          return ImageOps.grayscale(image).convert('RGB')
+      elif t == 'flip_horizontal':
+          return ImageOps.mirror(image)
+      elif t == 'flip_vertical':
+          return ImageOps.flip(image)
+      elif t == 'scale':
+          factor = transform['factor']
+          new_size = (int(image.width * factor), int(image.height * factor))
+          return image.resize(new_size, Image.Resampling.LANCZOS)
+      elif t == 'blur':
+          return image.filter(ImageFilter.GaussianBlur(radius=transform['radius']))
+      elif t == 'rotate':
+          return image.rotate(transform['angle'], expand=True)
+      else:
+          raise ValueError(f"Unknown: {t}")
+ 
+PART 2: PERFORMANCE OPTIMIZATION
+----------------------------------
+Use ProcessPoolExecutor to parallelize (CPU-bound task — use multiprocessing, NOT threading).
+ 
+  from concurrent.futures import ProcessPoolExecutor
+ 
+  def process_single_image(args):
+      image_path, transform_path, output_path = args
+      with open(transform_path) as f:
+          data = json.load(f)
+      transformations = data.get('transformations', [])
+      image = Image.open(image_path)
+      result = image.copy()
+      for transform in transformations:
+          result = apply_transformation(result, transform)
+      os.makedirs(os.path.dirname(output_path), exist_ok=True)
+      result.save(output_path)
+      image.close(); result.close()
+      return output_path
+ 
+  def process_images_parallel(image_dir, transformation_dir, output_dir, get_output_path):
+      image_files = [f for f in Path(image_dir).iterdir()
+                     if f.suffix.lower() in ('.png', '.jpg', '.jpeg')]
+      transform_files = list(Path(transformation_dir).glob('*.json'))
+      work_items = []
+      for transform_file in transform_files:
+          for image_file in image_files:
+              output_path = get_output_path(str(image_file), str(transform_file))
+              work_items.append((str(image_file), str(transform_file), output_path))
+      with ProcessPoolExecutor() as executor:
+          results = list(executor.map(process_single_image, work_items))
+ 
+FOLLOW-UP: Threading vs Multiprocessing
+-----------------------------------------
+ProcessPoolExecutor:
+  - Best for CPU-bound tasks
+  - Bypasses GIL (separate interpreters)
+  - Higher overhead (process creation)
+ 
+ThreadPoolExecutor:
+  - Best for I/O-bound tasks
+  - Limited by GIL for Python code
+  - Lower overhead
+ 
+Image processing (blur, rotate, scale) is CPU-intensive → ProcessPoolExecutor wins.
+GIL is released during I/O, but computation bottleneck makes multiprocessing better.
+ 
+================================================================================
+SYSTEM DESIGN #8 - INFERENCE API
+High Frequency | Software Engineer
+================================================================================
+ 
+PROBLEM STATEMENT
+-----------------
+Design a high-concurrency inference API system that handles massive concurrent
+requests efficiently. The inference API endpoint is provided and cannot be modified.
+Focus on surrounding infrastructure, particularly the batch service.
+ 
+Given Constraints:
+  - Fixed inference API (cannot modify)
+  - Client-facing synchronous requests
+  - Near real-time latency: < 500ms-1s
+  - High concurrent requests
+  - Limited GPU resources
+ 
+PHASE 1: REQUIREMENTS
+----------------------
+Functional: Submit inference requests, request batching, multi-tier support (free/paid/enterprise), rate limiting
+ 
+Non-Functional:
+  - Scale: 1,000 RPS → 10,000+ RPS
+  - Latency: P95 < 500ms end-to-end
+  - Availability: 99.9%
+  - GPU Utilization: 70-80%
+ 
+Capacity Estimation:
+  GPU Throughput:
+    - Batch size: 32 requests
+    - Inference time per batch: 50ms
+    - Batching delay: ~20ms, Data transfer: ~5ms
+    - Total per batch: 75ms
+    - Batches per GPU/sec: 1000/75 = 13.3
+    - RPS per GPU: 13.3 × 32 = 426 RPS
+ 
+  GPUs for 1000 RPS: (1000/426) / 0.7 ≈ 4 GPUs
+  For 10,000 RPS: ~34 GPUs, for 3x peak: ~100 GPUs
+ 
+PHASE 2: DATA MODEL
+--------------------
+Request:
+  id, user_id, tier, model, status, created_at, completed_at, latency_ms
+ 
+GPUWorker (Redis):
+  worker_id, status, current_utilization, queue_depth, last_heartbeat
+ 
+Redis Queue structure:
+  key: queue:{tier}  (queue:free, queue:paid, queue:enterprise)
+  key: inflight:{tier}:{batcher_id}
+ 
+PHASE 3: HIGH-LEVEL DESIGN
+---------------------------
+Architecture:
+  Clients → Load Balancer → API Gateway (auth, rate limit) →
+  Enterprise/Paid/Free Queues → Request Batcher → GPU Workers
+  Redis (Queues + State + Pub/Sub), PostgreSQL (Persistence)
+ 
+Request Flow:
+  1. Client → Load Balancer (2ms)
+  2. API Gateway (5ms): Auth, rate limit, determine tier, write to queue,
+     store request_id → gateway_instance+channel in Redis, keep HTTP open
+  3. Queue wait (~20ms avg)
+  4. Batcher → GPU (~55ms): collect batch, send to least-loaded GPU
+  5. Response path (8ms): GPU→Batcher→Redis pub/sub→Gateway→Client
+ 
+Total: ~90-130ms (under 500ms SLA)
+ 
+Request Batcher:
+  class RequestBatcher:
+      def __init__(self, consumer_id):
+          self.batch_size = 32
+          self.timeout_ms = 40  # Max wait time
+ 
+      async def collect_batch(self):
+          batch = []
+          start_time = now()
+          while len(batch) < self.batch_size:
+              if now() - start_time > self.timeout_ms:
+                  break
+              for queue in ['enterprise', 'paid', 'free']:
+                  request = redis.rpoplpush(f'queue:{queue}', f'inflight:{queue}:{self.consumer_id}')
+                  if request:
+                      batch.append(request)
+                      if len(batch) >= self.batch_size: break
+          return batch
+ 
+PHASE 5: SCALING & TRADE-OFFS
+-------------------------------
+Dynamic Rate Limiting:
+  - Adjust based on GPU capacity: capacity = active_gpus × 426 × 0.7
+  - Queue depth > 500: Only accept enterprise
+  - Queue depth > 100: Only accept paid+
+ 
+Traffic Spike Handling:
+  - 70% utilization buys time while new GPUs spin up
+  - 0-10s: Existing GPUs absorb with 30% buffer
+  - 10-60s: Auto-scaling triggers
+  - 1-5min: New GPU provisioning
+ 
+Timeouts:
+  - Queue age: 2000ms
+  - GPU processing: 3000ms
+  - Total request: 4000ms
+ 
+Auto-Scaling Triggers:
+  - Scale up: GPU util > 80% for 2min, Queue > 100 for 1min
+  - Scale down: GPU util < 50% for 10min, Queue < 10 for 10min
+ 
+================================================================================
+SYSTEM DESIGN #9 - PROMPT ENGINEERING PLAYGROUND
+Software Engineer
+================================================================================
+ 
+PROBLEM STATEMENT
+-----------------
+Design a prompt engineering playground similar to ChatGPT Playground or
+Anthropic Console. Client engineer's perspective — emphasize UX flows, client
+state management, streaming, performance.
+ 
+PHASE 1: REQUIREMENTS
+----------------------
+Functional:
+  - Create and edit prompts (system instructions, user messages, assistant examples)
+  - Configure model parameters (temperature, max tokens, top-p, stop sequences)
+  - Execute prompts with streaming responses
+  - Save and organize prompts into projects/folders
+  - View execution history
+  - Share prompts with team members (enterprise)
+ 
+Non-Functional:
+  - Latency: First token p50 < 1s, p95 < 3s
+  - Streaming: Token-by-token
+  - Autosave: No lost work
+  - Concurrent editing support
+ 
+PHASE 2: DATA MODEL
+--------------------
+  User: id, email, org_id, api_key_hash
+  Organization: id, billing_plan, usage_limits
+  Project: id, org_id, name
+  Prompt: id, project_id, name, system_prompt, messages[], model_config
+  PromptVersion: id, prompt_id, version_number, content_snapshot
+  Execution: id, prompt_id, user_id, input_tokens, output_tokens, latency_ms, status
+  ExecutionResult: id, execution_id, response_text, finish_reason
+  SharedPrompt: id, prompt_id, shared_with_user_id, permission_level
+ 
+Prompt Structure:
+  {
+    "system_prompt": "...",
+    "messages": [
+      {"role": "user", "content": "..."},
+      {"role": "assistant", "content": "..."},
+      {"role": "user", "content": "{{user_input}}"}
+    ],
+    "model_config": {
+      "model": "claude-3-5-sonnet-20241022",
+      "temperature": 0.7,
+      "max_tokens": 1024,
+      "stop_sequences": []
+    },
+    "variables": ["user_input"]
+  }
+ 
+PHASE 3: API DESIGN
+--------------------
+Project & Prompt Management:
+  GET /projects?cursor=...&limit=20
+  POST /projects
+  GET /projects/:project_id
+  POST /prompts
+  GET /prompts/:prompt_id
+  PATCH /prompts/:prompt_id  (partial update for autosave)
+  DELETE /prompts/:prompt_id
+ 
+Streaming Execution (Critical Path):
+  POST /prompts/:prompt_id/execute
+    Headers: Accept: text/event-stream
+    SSE Events:
+      event: start → {execution_id, model}
+      event: token → {text}
+      event: done → {execution_id, input_tokens, output_tokens, finish_reason}
+      event: error → {code, message}
+ 
+  POST /executions/:execution_id/cancel
+  GET /executions/:execution_id
+ 
+Execution History:
+  GET /prompts/:prompt_id/executions?cursor=...&limit=20
+  GET /executions/compare?ids=exec_1,exec_2
+ 
+Sharing:
+  POST /prompts/:prompt_id/shares
+  GET /prompts/shared-with-me
+  POST /prompts/:prompt_id/fork
+ 
+Key API Decisions:
+  - SSE (not WebSockets): Simpler for unidirectional streaming
+  - Execution tied to saved prompt (not ad-hoc): Auto history tracking
+  - PATCH for autosave: Only send changed fields
+  - Cursor-based pagination
+ 
+PHASE 4: HIGH-LEVEL DESIGN
+---------------------------
+Client-side streaming:
+  const response = await fetch(`/prompts/${id}/execute`, {
+    method: 'POST',
+    headers: {'Accept': 'text/event-stream'},
+    body: JSON.stringify({variable_values: {...}})
+  });
+  const reader = response.body.getReader();
+  // Parse SSE events...
+ 
+NOTE: Standard EventSource only supports GET. Use fetch() with ReadableStream for POST+SSE.
+ 
+Autosave Pattern:
+  - Debounce changes (500ms)
+  - Send PATCH with only changed fields
+  - Show "Saving..." → "Saved ✓"
+ 
+State Management:
+  - Prompt content: Server (PostgreSQL), synced via autosave
+  - Unsaved changes: Client (in-memory)
+  - Execution stream: Client buffers tokens
+  - UI state: Client-only
+ 
+DEEP DIVE: TRADE-OFFS
+----------------------
+Autosave vs Explicit Save:
+  - Autosave: No lost work, seamless UX | Version clutter, hard to undo
+  - Explicit: Clean history | Risk of lost work
+  Decision: Autosave with smart versioning
+ 
+Streaming vs Buffered:
+  Decision: SSE with fallback (poll GET /executions/:id every 2s if SSE fails)
+ 
+================================================================================
+SYSTEM DESIGN #10 - BATCH PROCESSING SERVICE
+Software Engineer
+================================================================================
+ 
+PROBLEM STATEMENT
+-----------------
+Design an HTTP API that exposes a batch processing function for LLM inference.
+Individual users make single synchronous requests, but internally the system
+must batch these requests for efficient GPU processing.
+ 
+Given Function (cannot modify):
+  def batchstring(inputs: list[str]) -> list[str]:
+      """
+      - Input size: 1-100 strings per batch
+      - Output size: 1-100 strings (one per input)
+      - Latency: ~100ms per batch (fixed, regardless of batch size)
+      - Concurrency: Each GPU instance can only process ONE batch at a time
+      """
+ 
+Core Challenge: Accept individual HTTP requests, aggregate into batches, route
+to GPU workers, map responses back to original requesters.
+ 
+PHASE 1: REQUIREMENTS
+----------------------
+Non-Functional:
+  - Latency: P95 < 200ms
+  - Throughput: 1,000 RPS
+  - GPU Utilization: 70-80%
+ 
+Capacity:
+  GPU Throughput:
+    - 10 batches/sec/GPU × 32 req/batch = 320 RPS per GPU
+    - 6 GPUs needed (1000/320 / 0.7)
+ 
+  Latency: 16ms (batching) + 10ms (network) + 100ms (GPU) = ~126ms ✓
+ 
+PHASE 2: DATA MODEL
+--------------------
+InferenceRequest: request_id, input, timestamp, return_to, status
+Batch: batch_id, requests[], created_at, gpu_id
+InferenceResponse: request_id, output, latency_ms
+ 
+Data is largely stateless (no durable database needed):
+  - Pending requests: In-memory (API server)
+  - Request queue: Redis List
+  - Batch queue: Redis List
+  - Response routing: Redis Pub/Sub (ephemeral)
+ 
+PHASE 3: API DESIGN
+--------------------
+POST /api/inference
+  Request: {"input": "E equals "}
+  Response 200: {"output": "E equals mc^2", "request_id": "req_abc123", "latency_ms": 142}
+  Response 503: {"error": "SERVICE_OVERLOADED", "retry_after_ms": 5000}
+ 
+Error Codes: 200 Success, 400 Bad Request, 429 Rate Limited, 503 Overloaded, 504 Timeout
+ 
+PHASE 4: HIGH-LEVEL DESIGN
+---------------------------
+Architecture:
+  Users → Load Balancer → API Servers → Redis Request Queue → Batching Service →
+  Redis Batch Queue → GPU Workers → Redis Pub/Sub (response routing)
+ 
+Request Flow:
+  1. API Server: Generate request_id, store connection, push to Redis queue
+  2. Batching Service: BLPOP from queue, accumulate batch (size OR timeout)
+  3. GPU Worker (pull-based): BLPOP from batch queue, execute, publish to Pub/Sub
+  4. Response Routing: GPU publishes to "responses:api-N", correct API server delivers
+ 
+Batching Strategy (timeout-based):
+  class RequestBatcher:
+      def __init__(self, batch_size=32, timeout_ms=50):
+          ...
+      def should_send_batch(self):
+          if len(batch) >= self.batch_size: return True
+          if elapsed_ms() > self.timeout_ms: return True
+          return False
+ 
+Why pull-based GPU: BLPOP is atomic — no race conditions, natural backpressure.
+ 
+Response Routing Problem:
+  - Each API instance subscribes to its own channel: "responses:api-N"
+  - Request includes "return_to" field
+  - GPU workers publish each response to correct channel
+ 
+Collocated vs Separate Architecture:
+  Collocated: Low complexity, ~120ms latency, medium GPU efficiency, ~5K RPS limit
+  Separate Service: High complexity, ~140ms latency, high GPU efficiency, 50K+ RPS
+ 
+PHASE 5: SCALING & TRADE-OFFS
+-------------------------------
+Failure Handling:
+  GPU crash: Requeue batch, timeout at API layer (5s), 1-2 retries then DLQ
+  API server crash: Clients reconnect, requests timeout, retry
+ 
+Latency vs Throughput Adaptive:
+  def calculate_batch_params(queue_depth, gpu_utilization):
+      if gpu_utilization < 0.5 and queue_depth < 10:
+          return BatchParams(size=16, timeout_ms=30)  # prioritize latency
+      elif queue_depth > 100 or gpu_utilization > 0.85:
+          return BatchParams(size=64, timeout_ms=100) # prioritize throughput
+      else:
+          return BatchParams(size=32, timeout_ms=50)  # balanced
+ 
+================================================================================
+SYSTEM DESIGN #11 - DISTRIBUTED MODEL DEPLOYMENT
+Software Engineer
+================================================================================
+ 
+PROBLEM STATEMENT
+-----------------
+Design a system that efficiently downloads and distributes a large ML model
+(e.g., 500GB) from external storage to all GPU workers in a data center cluster.
+ 
+Given Constraints:
+  - Model size: 500GB
+  - Workers: 100-1000 GPU workers
+  - External bandwidth: 10 Gbps (download from S3/GCS)
+  - Internal bandwidth per worker: 10 Gbps full-duplex
+  - Objective: Minimize total time to deploy to ALL workers
+  - Reliability: Handle worker failures
+ 
+CAPACITY ESTIMATION
+--------------------
+  - Transfer 500GB at 10 Gbps: 500×8 / 10 = 400 seconds
+  - Chunk size (1 GB): 1×8 / 10 = 0.8 seconds
+  - Number of chunks: 500
+ 
+DISTRIBUTION STRATEGY COMPARISON
+---------------------------------
+Approach 1: Sequential (Naive — everyone downloads from external)
+  - Each worker: 10 Gbps / 100 = 0.1 Gbps per worker
+  - Time: 500×8 / 0.1 = 40,000s ≈ 11 HOURS. Unacceptable.
+ 
+Approach 2: Binary Tree Distribution
+  - Each parent splits bandwidth across 2 children → 5 Gbps per child
+  - Time: 500×8 / 5 + 7 levels × 1.6s = 811s ≈ 13.5 min
+  - For 1000 workers: ≈ 13.6 min (logarithmic in N)
+ 
+Approach 3: Pipeline Distribution (BEST for ~100 workers)
+  W1 → W2 → W3 → ... → W100
+  Phase 1: Download all 500 chunks through W1 = 400s
+  Phase 2: Last chunk propagates: 99 hops × 0.8s = 79.2s
+  Total: 479s ≈ 8 MINUTES ✓
+ 
+Comparison:
+  Strategy         | 100 Workers | 1000 Workers | Complexity
+  Sequential       | 11 hours    | 111 hours    | O(N×S)
+  Binary Tree      | 13.5 min    | 13.6 min     | O(S + C×logN)
+  Pipeline         | 8 min       | 20 min       | O(S + N×C)
+ 
+Recommendation: Pipeline for ~100 workers; binary tree for large N.
+ 
+PHASE 3: API DESIGN
+--------------------
+Coordinator:
+  POST /deployments → {deployment_id, status, estimated_time_seconds}
+  GET /deployments/{id} → {status, progress, workers_complete, workers_failed}
+ 
+Worker-to-Worker (gRPC):
+  service ChunkTransfer {
+    rpc StreamChunks(stream ChunkRequest) returns (stream ChunkData);
+  }
+ 
+PHASE 4: REQUEST FLOW
+----------------------
+Phase 1: Initialization
+  - Coordinator fetches manifest (pre-computed checksums)
+  - Assigns pipeline topology: [W1, W2, ..., W100]
+ 
+Phase 2: Seeding
+  - W1 downloads chunk, immediately streams to W2 (full-duplex)
+  - W1: Download chunk N, send chunk N-1 to W2 simultaneously
+ 
+Phase 3: Steady-State
+  # Each worker runs two threads
+  Thread 1 (receive): Download chunks, verify SHA256, write to disk, report progress
+  Thread 2 (send): Wait until chunk available, send to downstream
+ 
+Phase 4: Completion
+  - Verify global checksum, report SUCCESS/FAILURE to coordinator
+ 
+FAILURE HANDLING
+-----------------
+Worker Failure Mid-Pipeline:
+  Before: W1 → W2 → W3 → W4 → W5
+  After:  W1 → W2 ────→ W4 → W5
+ 
+  Recovery:
+  1. Coordinator detects failure (missed heartbeats over 5-10s)
+  2. Updates topology: W2's downstream = W4
+  3. W4 requests missing chunks from W2
+ 
+Coordinator Failure:
+  - 3-5 replicas with etcd leader election
+ 
+Corrupted Chunks:
+  - SHA256 checksum per chunk
+  - Retry with exponential backoff (max 3 attempts)
+ 
+RACK-AWARE TOPOLOGY
+--------------------
+Order pipeline by rack to minimize cross-rack hops:
+  Naive:      W1(R1)→W4(R2)→W2(R1)→... (5 cross-rack hops)
+  Rack-aware: W1(R1)→W2(R1)→W3(R1)→W4(R2)→... (1 cross-rack hop)
+ 
+SCALING
+--------
+  100 workers:   479s (8 min)   — 400s download + 79s propagation
+  1,000 workers: 1,199s (20 min) — propagation starts to dominate
+  10,000+:       Consider tree-of-pipelines hybrid
+ 
+================================================================================
+SYSTEM DESIGN #12 - 1-TO-1 CHAT SYSTEM
+Software Engineer
+================================================================================
+ 
+PHASE 1: REQUIREMENTS
+----------------------
+Functional:
+  - Send messages (text)
+  - Receive messages (near real-time if online)
+  - Conversation history (scroll back)
+  - Read receipts
+  - Offline delivery
+ 
+Non-Functional:
+  - Scale: 100M DAU, 1B messages/day
+  - Latency: < 500ms delivery
+  - Availability: 99.9%+
+  - Ordering: Messages in correct order
+  - Durability: No message loss
+ 
+Capacity:
+  - ~11,500 QPS average, ~35,000 QPS peak
+  - 10M concurrent WebSocket connections (10% of DAU)
+  - ~200 GB/day storage, ~73 TB/year
+ 
+PHASE 2: DATA MODEL
+--------------------
+User: user_id, username, email, last_seen_at
+Device: device_id, user_id, device_type, push_token
+Conversation: conversation_id, participant_1, participant_2
+  CONSTRAINT: participant_1 < participant_2  (canonical ordering)
+  UNIQUE: (participant_1, participant_2)
+Message: message_id, conversation_id, sender_id, client_message_id,
+         content, sequence_number, created_at
+  UNIQUE: (conversation_id, sender_id, client_message_id)  — idempotency
+MessageStatus: message_id, device_id, status (sent/delivered)
+ReadReceipt: user_id, conversation_id, last_read_sequence (high-water mark)
+ 
+Key Design Decisions:
+  - sequence_number (server-assigned): Solves clock skew ordering issues
+  - client_message_id: Idempotency for retries
+  - High-water mark for read receipts (vs per-message)
+  - Per-device delivery tracking (for multi-device)
+ 
+PHASE 3: API DESIGN
+--------------------
+Why WebSockets: Bidirectional, persistent connection needed.
+ 
+Client → Server commands:
+  send_message: {action, conversation_id, content, client_message_id}
+  read_receipt: {action, conversation_id, last_read_sequence}
+  ping: {action}
+ 
+Server → Client events:
+  new_message: {event, message_id, conversation_id, sender_id, content, sequence_number, timestamp}
+  delivered: {event, message_id, conversation_id, timestamp}
+  read: {event, conversation_id, reader_id, last_read_sequence}
+  presence: {event, user_id, online}
+ 
+REST endpoints:
+  GET /conversations?cursor=...&limit=20
+  GET /conversations/{id}/messages?before_sequence=...&limit=50
+  POST /conversations  {"recipient_user_id": "..."}
+  GET /users/presence?user_ids=id1,id2
+ 
+PHASE 4: HIGH-LEVEL DESIGN
+---------------------------
+Architecture:
+  Clients → Load Balancer (L4) → WebSocket Servers → Redis Cluster → Message Service → PostgreSQL
+ 
+Message Routing (The Key Problem):
+  - Challenge: User B may be connected to a different WebSocket server
+  - Solution: Redis Pub/Sub
+    - Each WS server subscribes to channels for its connected users
+    - When B connects to WS2, WS2 subscribes to "user:B"
+    - To send message: PUBLISH user:B "{message}"
+ 
+Offline Delivery:
+  - Messages go to Redis inbox per device
+  - In-flight queue for ACK tracking (inbox + in-flight pattern)
+  - On reconnect: drain inbox, backfill gaps by sequence number
+ 
+Database Sharding:
+  - Shard key: hash(conversation_id) % num_shards
+  - All messages in a conversation are co-located
+ 
+PHASE 5: DEEP DIVES
+--------------------
+Message Ordering:
+  Option A: Redis INCR (recommended)
+    seq = redis.incr(f"seq:{conversation_id}")
+    # Then INSERT with that sequence_number
+ 
+  Option B: PostgreSQL advisory locks (simpler, lower throughput)
+ 
+Read Receipts at Scale:
+  - Problem: User scrolling generates hundreds of writes/second
+  - Solution: 2-second debounce on client, only update if higher sequence number
+ 
+Presence System:
+  - Heartbeat every 30s, TTL of 60s in Redis
+  - set_online(user_id): redis.setex(f"presence:{user_id}", 60, "online")
+ 
+Multi-Device Sync:
+  - Fan-out to all devices on send
+  - Independent ACKs per device
+  - Read receipts shared (high-water mark in DB)
+ 
+Consistency vs Availability:
+  Decision: Favor consistency within a conversation (users notice out-of-order messages)
+ 
+================================================================================
+BEHAVIORAL #13 - CULTURE & BEHAVIORAL INTERVIEW QUESTIONS
+================================================================================
+ 
+OVERVIEW
+--------
+Heavy emphasis on culture fit, AI safety values, and ethical considerations.
+Can use work OR life examples. Interviewers focus on thought process, not judging
+values as "right" or "wrong."
+ 
+AI SAFETY AND MISSION ALIGNMENT
+---------------------------------
+1. Why is AI Safety particularly important to you?
+   - They want personal experience, not theoretical talking points
+   - Connect to why you're interested in Anthropic
+   - Avoid generic answers
+ 
+2. Do you believe AI will disrupt/transform the world? Would you sacrifice your
+   own interests to ensure AI doesn't harm humanity?
+   - Must show genuine belief in AI's transformative potential
+   - Be prepared to discuss risks seriously
+   - Watch Lex Fridman's interviews with Dario Amodei and AI safety researchers
+ 
+3. What's your view on AI Safety? What could Anthropic do better in this area?
+   - Research Anthropic's safety initiatives (Constitutional AI, interpretability)
+   - Offer thoughtful, constructive suggestions
+   - Show deep thought about specific safety challenges
+ 
+4. What are your core values? How do you live these values in your daily work?
+   - Be specific with examples
+   - Discuss both successes and times you struggled to uphold your values
+ 
+5. Anthropic's values might require financial sacrifice. How do you feel about that?
+   - Testing genuine alignment vs financial motivation
+   - Show you've thought about this trade-off seriously
+ 
+FEEDBACK AND CONFLICT RESOLUTION
+----------------------------------
+6. Tell me about a time you received feedback that was emotionally difficult.
+   How did you handle it?
+   - Show vulnerability — admit the emotional difficulty
+   - Focus on what you learned and how you grew
+ 
+7. Describe a situation where you had a conflict and later discovered you were wrong.
+   - Tests humility and ability to change your mind
+   - Explain initial reasoning, moment you realized, how you made it right
+ 
+8. How do you deal with conflict when both parties' views align with the company's mission?
+   - Show you can disagree without being disagreeable
+   - Demonstrate tools/frameworks (data, external perspective, shared goals)
+ 
+9. Have you given or received feedback that surprised you?
+   - Looking for self-awareness and openness to blind spots
+ 
+10. Describe a situation where you changed your view of a person.
+    - Tests intellectual humility and openness
+ 
+UPHOLDING PRINCIPLES AND VALUES
+---------------------------------
+11. Give examples from work where you stood your ground on something you believed in.
+    - Show the stakes and why it mattered
+    - Explain how you advocated; what was the outcome?
+ 
+12. Tell me about a time you refused to do something you thought was wrong.
+    - Core Anthropic value: integrity over expediency
+    - Be specific; how did you communicate concerns; what were consequences?
+ 
+WHY ANTHROPIC
+--------------
+13. Why do you want to join Anthropic?
+    - Generic answers will get probing follow-up
+    - Be prepared for: "How do you know we're good at safety?"
+    - Show what specific work/research resonates with you
+ 
+14. Why do you prefer Anthropic over OpenAI?
+    - Focus on what attracts you TO Anthropic (not away from OpenAI)
+    - You can discuss philosophical differences without being disparaging
+ 
+15. How do you feel about Anthropic's relationship with politics/policy?
+    - Research their policy positions and advocacy work
+ 
+PERSONAL GROWTH
+----------------
+16. What are your life aspirations? Has anything significantly changed you?
+    - Does NOT need to be work-related
+    - Show depth of reflection
+ 
+GENERAL TIPS
+------------
+- Prepare AI safety talking points, but most questions focus on interpersonal dynamics
+- The interviewer assesses: depth of thought, ability to act under pressure, reflection
+- Watch Lex Fridman interviews with Dario Amodei, Chris Olah
+- Be authentic — experienced interviewers detect rehearsed answers
+ 
+================================================================================
+BEHAVIORAL #14 - HIRING MANAGER INTERVIEW QUESTIONS
+================================================================================
+ 
+OVERVIEW
+--------
+Focuses on project deep dives, technical leadership, collaboration, and career alignment.
+Expect significant detail with emphasis on technical challenges, leadership, and
+cross-functional collaboration (especially with product).
+ 
+PROJECT DEEP DIVE & TECHNICAL EXPERIENCE
+------------------------------------------
+1. Tell me about a project. Walk me through the entire system architecture.
+   - Must provide specific metrics: QPS, latency, throughput, data volumes, user counts
+   - Explain each component and how they interact
+   - Interviewers will drill into numbers and decisions
+ 
+2. What was the most difficult technical challenge you've faced?
+   - Choose a genuinely difficult problem
+   - Walk through thought process and approach
+   - Discuss trade-offs considered
+ 
+3. Which project are you most proud of and why?
+   - Focus on impact (technical and business)
+   - Discuss your specific contributions vs team
+ 
+COLLABORATION & CONFLICT RESOLUTION
+-------------------------------------
+4. Tell me about your experience collaborating with product teams.
+   - Prepare multiple stories (heavily emphasized in HM round)
+   - Show ability to balance technical constraints with product goals
+ 
+5. How do you handle conflicts in your team or with cross-functional partners?
+   - Use specific example with real stakes
+   - Show emotional intelligence; don't make yourself "the hero"
+ 
+TECHNICAL LEADERSHIP & MENTORSHIP
+-----------------------------------
+6. Tell me about your experience with technical leadership and mentorship.
+   - Formal or informal leadership examples
+   - How you influence technical direction; help others grow
+ 
+7. Describe a time you led a team through a challenging project.
+   - Leadership skills: delegation, communication, unblocking
+   - Both technical and interpersonal challenges
+ 
+CAREER & CULTURE FIT
+---------------------
+8. What's your career plan?
+   - Often the FIRST question asked
+   - IC track vs management track
+   - Connect goals to what Anthropic offers
+ 
+9. What kind of work environment and culture do you prefer?
+   - Research Anthropic's culture
+   - Show self-awareness about where you thrive
+ 
+GENERAL TIPS
+------------
+- Numbers matter: Always have specific metrics ready
+- Prepare multiple collaboration stories
+- Show both technical depth and people skills
+- Be ready to go very deep on your projects
+- Show growth mindset: discuss what you learned from failures
+ 
+================================================================================
+OA #15 - IN-MEMORY DATABASE
+Software Engineer, Machine Learning Engineer
+================================================================================
+ 
+OVERVIEW
+--------
+Implement a simplified in-memory database. 4 progressive levels.
+ 
+INPUT/OUTPUT FORMAT
+--------------------
+Input: List of queries (array of string arrays)
+Output: Array of strings (returned values of all queries)
+Note: Operations given in strictly increasing timestamp order.
+ 
+LEVEL 1: BASIC OPERATIONS
+--------------------------
+Operations:
+ 
+SET <timestamp> <key> <field> <value>
+  - Insert/update field-value in record; returns ""
+ 
+COMPARE_AND_SET <timestamp> <key> <field> <expectedValue> <newValue>
+  - Update field to newValue only if current == expectedValue
+  - Returns "true" if updated, "false" otherwise
+ 
+COMPARE_AND_DELETE <timestamp> <key> <field> <expectedValue>
+  - Remove field only if current value == expectedValue
+  - Returns "true" if removed, "false" otherwise
+ 
+GET <timestamp> <key> <field>
+  - Returns value or "" if not found
+ 
+Example:
+  SET 0 A B 4 → ""
+  SET 1 A C 6 → ""
+  COMPARE_AND_SET 2 A B 4 9 → "true"  (B was 4, now 9)
+  COMPARE_AND_SET 3 A C 4 9 → "false" (C is 6, not 4)
+  COMPARE_AND_DELETE 4 A C 6 → "true"
+  GET 5 A C → ""
+  GET 6 A B → "9"
+ 
+LEVEL 2: FILTER-BASED DISPLAY
+-------------------------------
+SCAN <timestamp> <key>
+  - Returns all fields sorted lexicographically
+  - Format: "field1(value1), field2(value2), ..."
+  - Returns "" if record doesn't exist
+ 
+SCAN_BY_PREFIX <timestamp> <key> <prefix>
+  - Returns fields starting with prefix, sorted lexicographically
+ 
+Example:
+  SET 1 A BC 1 → ""
+  SET 2 A BD 2 → ""
+  SET 3 A C 3 → ""
+  SCAN_BY_PREFIX 4 A B → "BC(1), BD(2)"
+  SCAN 5 A → "BC(1), BD(2), C(3)"
+ 
+LEVEL 3: TTL (TIME-TO-LIVE)
+----------------------------
+SET_WITH_TTL <timestamp> <key> <field> <value> <ttl>
+  - Field exists during [timestamp, timestamp + ttl)
+  - Returns ""
+ 
+All previous operations now respect TTL expiration.
+ 
+Example:
+  SET_WITH_TTL 1 A BC 1 9 → ""  (expires at 10)
+  SET_WITH_TTL 5 A BC 2 10 → "" (expires at 15, overwrites)
+  SET 6 A BD 3 → ""  (no TTL)
+  SCAN_BY_PREFIX 14 A B → "BC(2), BD(3)"
+  SCAN_BY_PREFIX 15 A B → "BD(3)"   (BC expired)
+ 
+LEVEL 4: BACKUP AND RESTORE
+----------------------------
+BACKUP <timestamp> <backup_at_timestamp>
+  - Saves snapshot of all records
+  - Returns count of valid records (with at least one non-expired field)
+  - backup_at_timestamp is the snapshot identifier
+ 
+RESTORE <timestamp> <restore_at_timestamp>
+  - Restores from backup
+  - If no exact backup at restore_at_timestamp, use latest backup <= that timestamp
+  - TTL recalculated: new_expiry = restore_timestamp + remaining_TTL_at_backup
+  - Returns ""
+ 
+Example:
+  SET_WITH_TTL 1 A x 10 10 → ""  (A.x expires at 11)
+  SET 2 B y 20 → ""
+  BACKUP 5 5 → "2"
+  SET 6 A x 99 → ""  (overwrite)
+  BACKUP 8 8 → "2"
+  COMPARE_AND_DELETE 9 B y 20 → "true"
+  RESTORE 12 7 → ""  (no backup at 7, use backup at 5)
+  GET 13 A x → "10"  (restored value; remaining TTL was 6, new expiry = 12+6=18)
+  GET 14 B y → "20"  (restored from backup)
+  SCAN 19 A → ""     (A.x expired at 18)
+ 
+COMPLETE SOLUTION
+-----------------
+from dataclasses import dataclass
+from typing import Dict, List, Optional, Tuple
+ 
+@dataclass
+class FieldState:
+    value: int
+    expires_at: Optional[int] = None
+ 
+RecordState = Dict[str, FieldState]
+ 
+class InMemoryDBLevel1:
+    def __init__(self):
+        self.records: Dict[str, RecordState] = {}
+ 
+    def is_alive(self, field: FieldState, timestamp: int) -> bool:
+        return field.expires_at is None or timestamp < field.expires_at
+ 
+    def get_or_create_record(self, key):
+        if key not in self.records:
+            self.records[key] = {}
+        return self.records[key]
+ 
+    def read_live_field(self, timestamp, key, field):
+        record = self.records.get(key)
+        if record is None: return None
+        state = record.get(field)
+        if state is None: return None
+        if self.is_alive(state, timestamp): return state
+        del record[field]
+        if not record: del self.records[key]
+        return None
+ 
+    def set(self, timestamp, key, field, value):
+        record = self.get_or_create_record(key)
+        record[field] = FieldState(value=value, expires_at=None)
+        return ''
+ 
+    def compare_and_set(self, timestamp, key, field, expected_value, new_value):
+        current = self.read_live_field(timestamp, key, field)
+        if current is None or current.value != expected_value: return 'false'
+        self.records[key][field] = FieldState(value=new_value, expires_at=current.expires_at)
+        return 'true'
+ 
+    def compare_and_delete(self, timestamp, key, field, expected_value):
+        current = self.read_live_field(timestamp, key, field)
+        if current is None or current.value != expected_value: return 'false'
+        record = self.records[key]
+        del record[field]
+        if not record: del self.records[key]
+        return 'true'
+ 
+    def get(self, timestamp, key, field):
+        current = self.read_live_field(timestamp, key, field)
+        return str(current.value) if current else ''
+ 
+class InMemoryDBLevel2(InMemoryDBLevel1):
+    def list_live_fields(self, timestamp, key):
+        record = self.records.get(key)
+        if record is None: return []
+        to_delete = []
+        entries = []
+        for field, state in record.items():
+            if self.is_alive(state, timestamp): entries.append((field, state))
+            else: to_delete.append(field)
+        for field in to_delete: del record[field]
+        if not record: del self.records[key]
+        entries.sort(key=lambda pair: pair[0])
+        return entries
+ 
+    def scan(self, timestamp, key):
+        return ', '.join(f'{field}({state.value})'
+                        for field, state in self.list_live_fields(timestamp, key))
+ 
+    def scan_by_prefix(self, timestamp, key, prefix):
+        return ', '.join(f'{field}({state.value})'
+                        for field, state in self.list_live_fields(timestamp, key)
+                        if field.startswith(prefix))
+ 
+class InMemoryDBLevel3(InMemoryDBLevel2):
+    def set_with_ttl(self, timestamp, key, field, value, ttl):
+        record = self.get_or_create_record(key)
+        record[field] = FieldState(value=value, expires_at=timestamp + ttl)
+        return ''
+ 
+@dataclass
+class SnapshotField:
+    value: int
+    remaining_ttl: Optional[int]
+ 
+@dataclass
+class SnapshotRecord:
+    fields: Dict[str, 'SnapshotField']
+ 
+class InMemoryDBLevel4(InMemoryDBLevel3):
+    def __init__(self):
+        super().__init__()
+        self.backups: Dict[int, Dict] = {}
+ 
+    def backup(self, timestamp, backup_at_timestamp):
+        snapshot = {}
+        for key, record in self.records.items():
+            snapshot_fields = {}
+            for field, state in record.items():
+                if not self.is_alive(state, timestamp): continue
+                remaining_ttl = None if state.expires_at is None else state.expires_at - timestamp
+                snapshot_fields[field] = SnapshotField(value=state.value, remaining_ttl=remaining_ttl)
+            if snapshot_fields:
+                snapshot[key] = SnapshotRecord(fields=snapshot_fields)
+        self.backups[backup_at_timestamp] = snapshot  # deep copy needed in practice
+        return str(len(snapshot))
+ 
+    def restore(self, timestamp, restore_at_timestamp):
+        candidates = [ts for ts in self.backups.keys() if ts <= restore_at_timestamp]
+        if not candidates: return ''
+        source_ts = max(candidates)
+        source_snapshot = self.backups[source_ts]
+        self.records = {}
+        for key, snapshot_record in source_snapshot.items():
+            record = {}
+            for field, sf in snapshot_record.fields.items():
+                expires_at = None if sf.remaining_ttl is None else timestamp + sf.remaining_ttl
+                record[field] = FieldState(value=sf.value, expires_at=expires_at)
+            if record:
+                self.records[key] = record
+        return ''
+ 
+================================================================================
+OA #16 - CLOUD STORAGE SYSTEM
+Software Engineer
+================================================================================
+ 
+OVERVIEW
+--------
+Implement a simple in-memory cloud storage system. 4 progressive levels.
+ 
+LEVEL 1: BASIC OPERATIONS
+--------------------------
+ADD_FILE <name> <size>
+  - Adds file to storage
+  - Fails if file with same name exists
+  - Returns "true"/"false"
+ 
+COPY_FILE <nameFrom> <nameTo>
+  - Copies file from nameFrom to nameTo
+  - Fails if: nameFrom doesn't exist, nameTo already exists
+  - Returns "true"/"false"
+ 
+GET_FILE_SIZE <name>
+  - Returns size as string, or ""
+ 
+Example:
+  ADD_FILE /dir1/dir2/file.txt 10 → "true"
+  COPY_FILE /nonexistent /dir1/file.txt → "false"
+  COPY_FILE /dir1/dir2/file.txt /dir1/file.txt → "true"
+  ADD_FILE /dir1/file.txt 15 → "false"  (already exists)
+  GET_FILE_SIZE /dir1/file.txt → "10"
+ 
+LEVEL 2: FINDING FILES BY PREFIX AND SUFFIX
+--------------------------------------------
+FIND_FILE <prefix> <suffix>
+  - Searches for files with names starting with prefix AND ending with suffix
+  - Returns: "name1(size1), name2(size2), ..."
+  - Sorted: descending by size, then lexicographically by name for ties
+  - Returns "" if no matches
+ 
+Example:
+  ADD_FILE /root/dir/another_dir/file.mp3 10 → "true"
+  ADD_FILE /root/file.mp3 5 → "true"
+  ADD_FILE /root/music/file.mp3 7 → "true"
+  COPY_FILE /root/music/file.mp3 /root/dir/file.mp3 → "true"
+  FIND_FILE /root .mp3 →
+    "/root/dir/another_dir/file.mp3(10), /root/dir/file.mp3(7), /root/music/file.mp3(7), /root/file.mp3(5)"
+  FIND_FILE /dir file.mp3 → ""
+ 
+LEVEL 3: USER CAPACITY LIMITS
+-------------------------------
+ADD_USER <userId> <capacity>
+  - Creates user with storage limit
+  - Returns "true"/"false" (false if user exists)
+ 
+ADD_FILE_BY <userId> <name> <size>
+  - Like ADD_FILE but owned by userId
+  - Fails if: userId doesn't exist, name exists, would exceed capacity
+  - Returns remaining capacity as string, or ""
+ 
+NOTE: ADD_FILE operations are run by "admin" with unlimited capacity.
+COPY_FILE preserves original file's ownership.
+ 
+UPDATE_CAPACITY <userId> <capacity>
+  - Changes max capacity for userId
+  - If files exceed new capacity, remove largest files (lexicographically for ties)
+    until total fits
+  - Returns count of removed files, or "" if userId doesn't exist
+ 
+Example:
+  ADD_USER user1 125 → "true"
+  ADD_FILE_BY user1 /dir/file.big 50 → "75"  (125-50=75 remaining)
+  ADD_FILE_BY user1 /file.med 30 → "45"
+  ADD_FILE_BY user2 /file.med 40 → ""  (file already owned by user1)
+  UPDATE_CAPACITY user1 50 → "2"  (must remove 2 files to fit)
+ 
+LEVEL 4: FILE COMPRESSION
+--------------------------
+COMPRESS_FILE <userId> <name>
+  - Compresses file owned by userId
+  - Replaces file with <name>.COMPRESSED at half the size
+  - Returns remaining capacity, or ""
+  - Fails if: file doesn't exist, wrong owner, userId doesn't exist
+ 
+DECOMPRESS_FILE <userId> <name>
+  - Reverts compression (name must end with .COMPRESSED)
+  - Fails if: would exceed capacity, decompressed version already exists, wrong owner
+  - Returns remaining capacity, or ""
+ 
+Example:
+  ADD_FILE_BY user1 /dir/file.mp4 500 → "500"  (capacity 1000)
+  COMPRESS_FILE user1 /dir/file.mp4 → "750"  (500/2=250, 1000-250=750 remaining)
+  GET_FILE_SIZE /dir/file.mp4.COMPRESSED → "250"
+  GET_FILE_SIZE /dir/file.mp4 → ""  (replaced)
+  DECOMPRESS_FILE user1 /dir/file.mp4.COMPRESSED → ""  (would need 500, only 750-500=250 free... wait)
+  UPDATE_CAPACITY user1 2000 → "0"
+  DECOMPRESS_FILE user1 /dir/file.mp4.COMPRESSED → ""  (/dir/file.mp4 exists already)
+ 
+================================================================================
+OA #17 - BANKING SYSTEM
+Software Engineer
+================================================================================
+ 
+OVERVIEW
+--------
+Implement an in-memory banking system. 4 progressive levels.
+ 
+LEVEL 1: BASIC ACCOUNT OPERATIONS
+-----------------------------------
+create_account(timestamp, account_id) → bool
+  - Returns True if created, False if already exists
+ 
+deposit(timestamp, account_id, amount) → int | None
+  - Returns new balance, or None if account doesn't exist
+ 
+transfer(timestamp, source_account_id, target_account_id, amount) → int | None
+  - Returns source balance if successful
+  - Returns None if: either account doesn't exist, same account, insufficient funds
+ 
+LEVEL 2: TOP SPENDERS
+----------------------
+top_spenders(timestamp, n) → list[str]
+  - Returns top n accounts by outgoing transactions (transfers out + withdrawals)
+  - Sorted: descending by total outgoing, then alphabetically by account_id
+  - Format: ["account_id_1(total_1)", "account_id_2(total_2)", ...]
+  - Note: Cashback (Level 3) should NOT be counted as outgoing
+ 
+LEVEL 3: SCHEDULED PAYMENTS WITH CASHBACK
+------------------------------------------
+pay(timestamp, account_id, amount) → str | None
+  - Withdraws amount, schedules 2% cashback after 24 hours
+  - Cashback = floor(amount * 0.02), refunded at timestamp + 86400000ms
+  - Returns unique payment ID (e.g., "payment1", "payment2")
+  - Returns None if: account doesn't exist, insufficient funds
+  - top_spenders now includes pay amounts
+ 
+get_payment_status(timestamp, account_id, payment) → str | None
+  - Returns "IN_PROGRESS" or "CASHBACK_RECEIVED"
+  - Returns None if: account doesn't exist, payment doesn't exist for account,
+    payment was for different account_id
+ 
+LEVEL 4: ACCOUNT MERGING AND HISTORICAL BALANCES
+-------------------------------------------------
+merge_accounts(timestamp, account_id_1, account_id_2) → bool
+  - Merges account_id_2 INTO account_id_1
+  - Returns False if: same account, either doesn't exist
+  - Merge behavior:
+    - Pending cashback for account_id_2 → refunded to account_id_1
+    - Can check old account_id_2 payments using account_id_1
+    - Balance of account_id_2 added to account_id_1
+    - Outgoing totals combined
+    - account_id_2 removed from system
+ 
+get_balance(timestamp, account_id, time_at) → int | None
+  - Returns balance of account at time_at
+  - Returns None if account didn't exist at time_at
+  - Reflects balance AFTER queries processed at time_at
+ 
+IMPORTANT EDGE CASES
+---------------------
+Account Recreation After Merge:
+  - After merge, account_id_2 is removed
+  - New account can be created with account_id_2 (fresh start, balance=0)
+  - Historical data before merge stays with account_id_1
+ 
+Historical Queries After Merge:
+  - time_at < T (merge time): Returns historical balance
+  - time_at >= T for merged account: Returns None
+ 
+================================================================================
+OA #18 - RECIPE MANAGER
+Software Engineer
+================================================================================
+ 
+OVERVIEW
+--------
+Implement an in-memory recipe management system. 4 progressive levels.
+Time Limit: 90 minutes
+ 
+LEVEL 1: BASIC CRUD OPERATIONS
+--------------------------------
+add_recipe(recipe_id, name, ingredients) → bool
+  - Returns False if: recipe_id exists, name exists (case-insensitive)
+  - IMPORTANT: Names are unique case-insensitively
+ 
+get_recipe(recipe_id) → dict | None
+  - Returns {id, name, ingredients}, or None
+ 
+update_recipe(recipe_id, name, ingredients) → bool
+  - Returns False if: recipe doesn't exist, new name conflicts with other recipe
+  - A recipe CAN keep its current name (even different casing)
+ 
+delete_recipe(recipe_id) → bool
+  - Returns True if deleted, False if not found
+ 
+LEVEL 2: SEARCH AND SORTING
+-----------------------------
+search_recipes(query) → list[dict]
+  - Case-insensitive substring match on name
+  - Sort: ingredient count ascending, then recipe ID ascending (numerically if numeric)
+ 
+get_all_recipes() → list[dict]
+  - Same sort as search_recipes
+ 
+LEVEL 3: USER SYSTEM
+---------------------
+add_user(user_id, username) → bool
+  - Returns False if user_id exists
+ 
+edit_recipe(user_id, recipe_id, name, ingredients) → bool
+  - Like update_recipe but requires valid user_id
+  - Returns False if: user doesn't exist, recipe doesn't exist, name conflict
+ 
+LEVEL 4: VERSION CONTROL
+-------------------------
+edit_recipe (Updated):
+  - Instead of overwriting, APPENDS a new version to history
+  - Current version = latest entry
+ 
+get_recipe_history(recipe_id) → list[dict] | None
+  - Returns [{version, name, ingredients}], ordered oldest to newest
+  - Returns None if recipe doesn't exist
+ 
+rollback_recipe(user_id, recipe_id, version) → bool
+  - Creates a new version that is a copy of the specified historical version
+  - Does NOT delete versions; adds old data as newest version
+  - Returns False if: user doesn't exist, recipe doesn't exist, version doesn't exist,
+    old version's name conflicts with another recipe's current name
+ 
+IMPORTANT EDGE CASES
+---------------------
+- "PASTA", "Pasta", "pasta" = same name
+- Rollback name conflict: Check if old version's name conflicts with OTHER recipe's name
+- Version numbers start at 1, never reset
+ 
+SAMPLE SOLUTION
+---------------
+class RecipeManager:
+    def __init__(self):
+        self.recipes = {}       # recipe_id -> {id, history: [{name, ingredients}]}
+        self.users = {}         # user_id -> user data
+        self.name_to_id = {}    # lowercase name -> recipe_id
+ 
+    def add_recipe(self, recipe_id, name, ingredients):
+        if recipe_id in self.recipes: return False
+        if name.lower() in self.name_to_id: return False
+        self.recipes[recipe_id] = {
+            'id': recipe_id,
+            'history': [{'name': name, 'ingredients': ingredients.copy()}]
+        }
+        self.name_to_id[name.lower()] = recipe_id
+        return True
+ 
+    def get_recipe(self, recipe_id):
+        if recipe_id not in self.recipes: return None
+        recipe = self.recipes[recipe_id]
+        current = recipe['history'][-1]
+        return {'id': recipe_id, 'name': current['name'], 'ingredients': current['ingredients'].copy()}
+ 
+    def _sort_recipes(self, recipes):
+        def sort_key(r):
+            count = len(r['ingredients'])
+            rid = r['id']
+            if rid.isdigit(): return (count, 0, int(rid), "")
+            else: return (count, 1, 0, rid)
+        return sorted(recipes, key=sort_key)
+ 
+    def search_recipes(self, query):
+        q = query.lower()
+        results = []
+        for rid, recipe in self.recipes.items():
+            current = recipe['history'][-1]
+            if q in current['name'].lower():
+                results.append({'id': rid, 'name': current['name'],
+                               'ingredients': current['ingredients'].copy()})
+        return self._sort_recipes(results)
+ 
+    def add_user(self, user_id, username):
+        if user_id in self.users: return False
+        self.users[user_id] = {'id': user_id, 'username': username}
+        return True
+ 
+    def edit_recipe(self, user_id, recipe_id, name, ingredients):
+        if user_id not in self.users: return False
+        if recipe_id not in self.recipes: return False
+        existing_id = self.name_to_id.get(name.lower())
+        if existing_id is not None and existing_id != recipe_id: return False
+        old_name = self.recipes[recipe_id]['history'][-1]['name']
+        del self.name_to_id[old_name.lower()]
+        self.recipes[recipe_id]['history'].append({'name': name, 'ingredients': ingredients.copy()})
+        self.name_to_id[name.lower()] = recipe_id
+        return True
+ 
+    def get_recipe_history(self, recipe_id):
+        if recipe_id not in self.recipes: return None
+        return [{'version': i+1, 'name': v['name'], 'ingredients': v['ingredients'].copy()}
+                for i, v in enumerate(self.recipes[recipe_id]['history'])]
+ 
+    def rollback_recipe(self, user_id, recipe_id, version):
+        if user_id not in self.users: return False
+        if recipe_id not in self.recipes: return False
+        history = self.recipes[recipe_id]['history']
+        if version < 1 or version > len(history): return False
+        old_version = history[version - 1]
+        current_name = history[-1]['name']
+        if old_version['name'].lower() != current_name.lower():
+            existing_id = self.name_to_id.get(old_version['name'].lower())
+            if existing_id is not None and existing_id != recipe_id: return False
+        del self.name_to_id[current_name.lower()]
+        history.append({'name': old_version['name'], 'ingredients': old_version['ingredients'].copy()})
+        self.name_to_id[old_version['name'].lower()] = recipe_id
+        return True
+ 
+================================================================================
+OA #19 - TASK MANAGEMENT SYSTEM
+Software Engineer
+================================================================================
+ 
+OVERVIEW
+--------
+Implement a task management system. 4 progressive levels.
+ 
+LEVEL 1: BASIC TASK MANAGEMENT
+--------------------------------
+add_task(timestamp, name, priority) → str
+  - Returns task ID: "task_id_1", "task_id_2", etc. (sequential)
+  - Same name allowed (differentiated by ID)
+ 
+update_task(timestamp, task_id, name, priority) → bool
+  - Returns True if updated, False if not found
+ 
+get_task(timestamp, task_id) → str | None
+  - Returns compact JSON: '{"name":"<name>","priority":<priority>}'
+  - No spaces in JSON; whitespace in name preserved
+  - Returns None if not found
+ 
+Example:
+  add_task(1, "Task 1", 5) → "task_id_1"
+  add_task(2, "Task 1", 5) → "task_id_2"
+  update_task(3, "task_id_1", "Updated Task 1", 4) → True
+  get_task(4, "task_id_1") → '{"name":"Updated Task 1","priority":4}'
+ 
+LEVEL 2: SEARCH AND SORTING
+-----------------------------
+search_tasks(timestamp, name_filter, max_results) → list[str]
+  - Case-sensitive substring match
+  - Sort: priority descending, then creation order ascending (numerically by ID)
+  - Returns [] if max_results <= 0
+ 
+list_tasks_sorted(timestamp, limit) → list[str]
+  - Same sorting; returns up to limit task IDs
+ 
+Example:
+  add_task(1, "Alpha", 10) → "task_id_1"
+  add_task(2, "Bravo", 15) → "task_id_2"
+  add_task(3, "Bravo Alpha", 5) → "task_id_3"
+  list_tasks_sorted(4, 2) → ["task_id_2", "task_id_1"]
+  search_tasks(5, "Bra", 5) → ["task_id_2", "task_id_3"]
+ 
+LEVEL 3: USERS, QUOTAS, AND TIME-BASED ASSIGNMENTS
+----------------------------------------------------
+add_user(timestamp, user_id, quota) → bool
+  - quota = max simultaneous active task assignments
+  - Returns False if user_id already exists
+ 
+assign_task(timestamp, task_id, user_id, finish_time) → bool
+  - Active during [timestamp, finish_time)
+  - Fails if: task/user doesn't exist, quota exceeded
+  - Returns True/False
+ 
+get_user_tasks(timestamp, user_id) → list[str]
+  - Returns active task IDs where start_time <= timestamp < finish_time
+  - Sort: finish_time ascending, then start_time ascending for ties
+  - Returns []
+ 
+Example:
+  add_user(1, "user1", 2) → True
+  add_task(3, "Task A", 10) → "task_id_1"
+  assign_task(5, "task_id_1", "user1", 15) → True  [5, 15)
+  assign_task(7, "task_id_2", "user1", 20) → True  [7, 20)
+  assign_task(9, "task_id_1", "user1", 25) → False  (quota=2 exceeded)
+  get_user_tasks(16, "user1") → ["task_id_2"]  (task_id_1 expired at 15)
+ 
+LEVEL 4: TASK COMPLETION AND OVERDUE TRACKING
+----------------------------------------------
+complete_task(timestamp, task_id, user_id) → bool
+  - Assignment must be active at timestamp
+  - Completes EARLIEST assignment if multiple active for same task
+  - Frees quota slot immediately
+  - Returns True/False
+ 
+get_overdue_assignments(timestamp, user_id) → list[str]
+  - Returns task_ids where finish_time <= timestamp AND not completed
+  - Same task can appear multiple times (independent assignments)
+  - Sort: finish_time ascending, then start_time ascending
+ 
+Example:
+  assign_task(35, "task_id_1", "user1", 45) → True  [35, 45)
+  assign_task(40, "task_id_1", "user1", 55) → True  [40, 55)
+  get_user_tasks(42, "user1") → ["task_id_1", "task_id_1"]  (both active)
+  complete_task(43, "task_id_1", "user1") → True  (completes [35,45), frees quota)
+  get_user_tasks(44, "user1") → ["task_id_1"]  ([40,55) still active)
+  get_overdue_assignments(65, "user1") → ["task_id_3", "task_id_1", "task_id_1"]
+ 
+COMPLETE SOLUTION
+-----------------
+from typing import Optional
+from dataclasses import dataclass
+ 
+@dataclass
+class Assignment:
+    task_id: str
+    user_id: str
+    start_time: int
+    finish_time: int
+    completed: bool = False
+ 
+class Task:
+    def __init__(self, task_id, name, priority):
+        self.task_id = task_id
+        self.name = name
+        self.priority = priority
+ 
+class User:
+    def __init__(self, user_id, quota):
+        self.user_id = user_id
+        self.quota = quota
+        self.assignments: list[Assignment] = []
+ 
+class TaskManagementSystem:
+    def __init__(self):
+        self.tasks: dict[str, Task] = {}
+        self.task_counter = 0
+        self.creation_order: dict[str, int] = {}
+        self.users: dict[str, User] = {}
+ 
+    # Level 1
+    def add_task(self, timestamp, name, priority):
+        self.task_counter += 1
+        task_id = f"task_id_{self.task_counter}"
+        self.tasks[task_id] = Task(task_id, name, priority)
+        self.creation_order[task_id] = self.task_counter
+        return task_id
+ 
+    def update_task(self, timestamp, task_id, name, priority):
+        if task_id not in self.tasks: return False
+        self.tasks[task_id].name = name
+        self.tasks[task_id].priority = priority
+        return True
+ 
+    def get_task(self, timestamp, task_id):
+        if task_id not in self.tasks: return None
+        t = self.tasks[task_id]
+        return f'{{"name":"{t.name}","priority":{t.priority}}}'
+ 
+    # Level 2
+    def search_tasks(self, timestamp, name_filter, max_results):
+        if max_results <= 0: return []
+        matching = [tid for tid, t in self.tasks.items() if name_filter in t.name]
+        matching.sort(key=lambda tid: (-self.tasks[tid].priority, self.creation_order[tid]))
+        return matching[:max_results]
+ 
+    def list_tasks_sorted(self, timestamp, limit):
+        if limit <= 0: return []
+        task_ids = list(self.tasks.keys())
+        task_ids.sort(key=lambda tid: (-self.tasks[tid].priority, self.creation_order[tid]))
+        return task_ids[:limit]
+ 
+    # Level 3
+    def add_user(self, timestamp, user_id, quota):
+        if user_id in self.users: return False
+        self.users[user_id] = User(user_id, quota)
+        return True
+ 
+    def assign_task(self, timestamp, task_id, user_id, finish_time):
+        if task_id not in self.tasks or user_id not in self.users: return False
+        user = self.users[user_id]
+        active = sum(1 for a in user.assignments
+                    if a.start_time <= timestamp < a.finish_time and not a.completed)
+        if active >= user.quota: return False
+        user.assignments.append(Assignment(task_id, user_id, timestamp, finish_time))
+        return True
+ 
+    def get_user_tasks(self, timestamp, user_id):
+        if user_id not in self.users: return []
+        user = self.users[user_id]
+        active = [a for a in user.assignments
+                  if a.start_time <= timestamp < a.finish_time and not a.completed]
+        active.sort(key=lambda a: (a.finish_time, a.start_time))
+        return [a.task_id for a in active]
+ 
+    # Level 4
+    def complete_task(self, timestamp, task_id, user_id):
+        if task_id not in self.tasks or user_id not in self.users: return False
+        user = self.users[user_id]
+        active = [a for a in user.assignments
+                  if a.task_id == task_id
+                  and a.start_time <= timestamp < a.finish_time
+                  and not a.completed]
+        if not active: return False
+        active.sort(key=lambda a: a.start_time)
+        active[0].completed = True
+        return True
+ 
+    def get_overdue_assignments(self, timestamp, user_id):
+        if user_id not in self.users: return []
+        user = self.users[user_id]
+        overdue = [a for a in user.assignments
+                   if a.finish_time <= timestamp and not a.completed]
+        overdue.sort(key=lambda a: (a.finish_time, a.start_time))
+        return [a.task_id for a in overdue]
+ 
+COMPLEXITY ANALYSIS
+--------------------
+Operation              | Time      | Space
+add_task               | O(1)      | O(1)
+update_task            | O(1)      | O(1)
+get_task               | O(1)      | O(1)
+search_tasks           | O(T log T)| O(T)
+list_tasks_sorted      | O(T log T)| O(T)
+add_user               | O(1)      | O(1)
+assign_task            | O(A)      | O(1)
+get_user_tasks         | O(A log A)| O(A)
+complete_task          | O(A log A)| O(A)
+get_overdue_assignments| O(A log A)| O(A)
+ 
+Where T = total tasks, A = assignments for a user
+ 
+================================================================================
+END OF DOCUMENT
+================================================================================
+ 
