@@ -3,14 +3,12 @@ input = sys.stdin.readline
 tests = int(input())
 
 for _ in range(tests):
-    first = ["2"] * int(input())
-    _ = input()
-    
-    if len(first) == 1:
-        print("1")
-    else:
-        print(" ".join(first))
+    n = int(input())
+    result = []
+    for i in range(n, 0, -1):
+        result.append(str(i))
 
+    print(" ".join(result))
 
 
 """
